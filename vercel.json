@@ -1,0 +1,55 @@
+{
+  "functions": {
+    "src/vercel/api/**/*.ts": {
+      "runtime": "@vercel/node@3"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/auth/(.*)",
+      "destination": "/src/vercel/api/auth/$1"
+    },
+    {
+      "source": "/api/generic/(.*)",
+      "destination": "/src/vercel/api/generic/$1"
+    },
+    {
+      "source": "/api/oauth/(.*)",
+      "destination": "/src/vercel/api/oauth/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization, X-Requested-With"
+        },
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Max-Age",
+          "value": "86400"
+        }
+      ]
+    }
+  ],
+  "env": {
+    "STRIPE_SECRET_KEY": "@stripe-secret-key",
+    "STRIPE_WEBHOOK_SECRET": "@stripe-webhook-secret",
+    "FIREBASE_ADMIN_PRIVATE_KEY": "@firebase-admin-private-key",
+    "FIREBASE_PROJECT_ID": "@firebase-project-id",
+    "FIREBASE_CLIENT_EMAIL": "@firebase-client-email"
+  }
+}

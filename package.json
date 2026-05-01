@@ -1,0 +1,155 @@
+{
+  "name": "@donotdev/functions",
+  "version": "0.1.42",
+  "private": false,
+  "description": "Backend functions for DoNotDev Framework - Firebase, Vercel, and platform-agnostic implementations for auth, billing, CRUD, and OAuth",
+  "main": "./lib/firebase/index.js",
+  "types": "./lib/firebase/index.d.ts",
+  "files": [
+    "lib/",
+    "src/",
+    "guidelines",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/shared/index.ts",
+      "import": "./src/shared/index.ts",
+      "default": "./src/shared/index.ts"
+    },
+    "./firebase": {
+      "types": "./src/firebase/index.ts",
+      "import": "./src/firebase/index.ts",
+      "default": "./src/firebase/index.ts"
+    },
+    "./vercel": {
+      "types": "./src/vercel/api/index.ts",
+      "import": "./src/vercel/api/index.ts",
+      "default": "./src/vercel/api/index.ts"
+    },
+    "./shared": {
+      "types": "./src/shared/index.ts",
+      "import": "./src/shared/index.ts",
+      "default": "./src/shared/index.ts"
+    },
+    "./supabase": {
+      "types": "./src/supabase/index.ts",
+      "import": "./src/supabase/index.ts",
+      "default": "./src/supabase/index.ts"
+    }
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "type-check": "bunx tsc --noEmit",
+    "build": "node build.mjs && tsc -p tsconfig.json",
+    "build:types": "tsc -p tsconfig.json",
+    "prepublishOnly": "bun run build",
+    "deploy": "firebase deploy --only functions",
+    "serve": "firebase emulators:start --only functions"
+  },
+  "dependencies": {
+    "@donotdev/core": "workspace:*",
+    "@donotdev/firebase": "workspace:*",
+    "@donotdev/supabase": "workspace:*"
+  },
+  "peerDependencies": {
+    "@ai-sdk/anthropic": "^1.2.0",
+    "@ai-sdk/google": "^1.2.0",
+    "@ai-sdk/openai": "^1.2.0",
+    "@sentry/node": "^10.39.0",
+    "@supabase/supabase-js": "^2.76.14",
+    "ai": "^4.3.0",
+    "firebase-admin": "^13.6.1",
+    "firebase-functions": "^7.0.5",
+    "next": "^16.1.6",
+    "stripe": "^20.3.1",
+    "valibot": "^1.2.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0"
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^1.2.0",
+    "@ai-sdk/google": "^1.2.0",
+    "@ai-sdk/openai": "^1.2.0",
+    "@sentry/node": "^10.39.0",
+    "@supabase/supabase-js": "^2.76.14",
+    "@types/node": "^24.10.13",
+    "ai": "^4.3.0",
+    "esbuild": "^0.27.3",
+    "firebase-admin": "^13.6.1",
+    "firebase-functions": "^7.0.5",
+    "next": "^16.1.6",
+    "stripe": "^20.3.1",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
+    "typescript": "^5.9.3",
+    "valibot": "^1.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/donotdev/functions.git"
+  },
+  "keywords": [
+    "dndev",
+    "firebase",
+    "supabase",
+    "vercel",
+    "cloud-functions",
+    "serverless",
+    "backend",
+    "auth",
+    "billing",
+    "stripe",
+    "oauth",
+    "crud"
+  ],
+  "author": "AMBROISE PARK Consulting",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/anthropic": {
+      "optional": true
+    },
+    "@ai-sdk/google": {
+      "optional": true
+    },
+    "@ai-sdk/openai": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "@sentry/node": {
+      "optional": true
+    },
+    "@supabase/supabase-js": {
+      "optional": true
+    },
+    "firebase-admin": {
+      "optional": true
+    },
+    "firebase-functions": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    },
+    "stripe": {
+      "optional": true
+    },
+    "@upstash/ratelimit": {
+      "optional": true
+    },
+    "@upstash/redis": {
+      "optional": true
+    }
+  }
+}

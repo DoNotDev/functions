@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.functions.json",
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "outDir": "lib",
+    "rootDir": "src",
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src"],
+  "exclude": [
+    "lib",
+    "../components/**/*",
+    "../../packages/components/**/*",
+    "**/node_modules",
+    "**/__tests__/**",
+    "**/*.test.ts"
+  ]
+}
