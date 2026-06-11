@@ -1,6 +1,6 @@
 {
   "name": "@donotdev/functions",
-  "version": "0.1.42",
+  "version": "0.1.44",
   "private": false,
   "description": "Backend functions for DoNotDev Framework - Firebase, Vercel, and platform-agnostic implementations for auth, billing, CRUD, and OAuth",
   "main": "./lib/firebase/index.js",
