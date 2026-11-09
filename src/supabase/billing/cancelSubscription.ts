@@ -12,7 +12,7 @@
 import * as v from 'valibot';
 
 import { cancelUserSubscription } from '../../shared/billing/helpers/subscriptionManagement.js';
-import { initStripe } from '../../shared/utils.js';
+import { initStripe } from '../../shared/billing/stripeClient.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { createSupabaseAuthProvider } from '../helpers/authProvider.js';
 

@@ -13,7 +13,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import * as v from 'valibot';
 
 import { handleError } from '../../../shared/errorHandling.js';
-import { stripe, validateStripeEnvironment } from '../../../shared/utils.js';
+import { stripe, validateStripeEnvironment } from '../../../shared/billing/stripeClient.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
 
 const customerPortalSchema = v.object({

@@ -13,9 +13,9 @@
 import type { StripeBackConfig } from '@donotdev/core/server';
 
 import { updateUserSubscription } from '../../shared/billing/helpers/updateUserSubscription.js';
-import { createSupabaseIdempotencyStore } from '../../shared/billing/idempotency.js';
+import { createSupabaseIdempotencyStore } from '../../shared/billing/supabaseIdempotency.js';
 import { processWebhook } from '../../shared/billing/webhookHandler.js';
-import { initStripe, stripe } from '../../shared/utils.js';
+import { initStripe, stripe } from '../../shared/billing/stripeClient.js';
 import { createEdgeFunction } from '../edgeFunction.js';
 import { createSupabaseAuthProvider } from '../helpers/authProvider.js';
 

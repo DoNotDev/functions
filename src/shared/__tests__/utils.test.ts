@@ -47,8 +47,8 @@ import {
   validateDocument,
   validateCollectionName,
   assertAuthenticated,
-  validateStripeEnvironment,
 } from '../utils';
+import { validateStripeEnvironment } from '../billing/stripeClient';
 
 // Need to import DoNotDevError from the mocked module for instanceof checks
 

@@ -18,11 +18,7 @@ import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { updateUserSubscription } from '../../shared/billing/helpers/updateUserSubscription.js';
 import { handleError } from '../../shared/errorHandling.js';
-import {
-  stripe,
-  validateStripeEnvironment,
-  initStripe,
-} from '../../shared/utils.js';
+import { stripe, validateStripeEnvironment, initStripe } from '../../shared/billing/stripeClient.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';

@@ -14,7 +14,7 @@ import * as v from 'valibot';
 import { hasRoleAccess, type StripeBackConfig } from '@donotdev/core/server';
 
 import { changeUserPlan } from '../../shared/billing/helpers/subscriptionManagement.js';
-import { initStripe } from '../../shared/utils.js';
+import { initStripe } from '../../shared/billing/stripeClient.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { createSupabaseAuthProvider } from '../helpers/authProvider.js';
 

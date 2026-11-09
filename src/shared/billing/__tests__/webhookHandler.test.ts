@@ -88,10 +88,7 @@ vi.mock('../../logger.js', () => ({
   },
 }));
 
-import {
-  createInMemoryIdempotencyStore,
-  resetIdempotencyStore as resetLegacyIdempotencyStore,
-} from '../idempotency.js';
+import { createInMemoryIdempotencyStore } from '../idempotency.js';
 import type { IdempotencyStore } from '../idempotency.js';
 import { processWebhook } from '../webhookHandler.js';
 import type { BillingAuthProvider, UpdateSubscriptionFn } from '@donotdev/core/server';
@@ -1529,39 +1526,5 @@ describe('event routing — StripeOrder', () => {
 
     expect(result.message).toBe('Webhook processed');
     expect(updateSubscription).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-describe('processWebhook — 0.1.x call without a store', () => {
-  beforeEach(() => {
-    resetLegacyIdempotencyStore();
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  it('falls back to the deprecated auto-detected store and still deduplicates', async () => {
-    const event = makeEvent('checkout.session.completed', {
-      metadata: { userId: 'u_legacy', billingConfigKey: 'pro_monthly' },
-      subscription: 'sub_legacy',
-      customer: 'cus_legacy',
-    });
-    const updateSubscription = makeUpdateSubscription();
-    const call = () =>
-      processWebhook(
-        RAW_BODY,
-        SIGNATURE,
-        WEBHOOK_SECRET,
-        makeStripe(event),
-        makeConfig(),
-        updateSubscription,
-        makeAuthProvider()
-      );
-
-    await call();
-    const second = await call();
-    expect(second.message).toBe('Event already processed');
-    expect(updateSubscription).toHaveBeenCalledOnce();
   });
 });

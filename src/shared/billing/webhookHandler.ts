@@ -18,7 +18,6 @@ import type { BillingAuthProvider, StripeBackConfig, UpdateSubscriptionFn } from
 
 import { handleError } from '../errorHandling.js';
 import { logger } from '../logger.js';
-import { createIdempotencyStore } from './idempotency.js';
 import { ReservationLostError } from './idempotencyContract.js';
 import type { IdempotencyStore } from './idempotencyContract.js';
 import { handleOrderSessionEvent } from './orderWebhook.js';
@@ -56,11 +55,12 @@ const MARK_PROCESSED_BACKOFF_MS = 200;
  * @param billingConfig - Billing configuration
  * @param updateSubscription - Function to update user subscription
  * @param authProvider - Auth provider for subscription claims (null: subscription events fail)
- * @param idempotencyStore - Durable store matching the backend (Firestore / Supabase).
- *   Omitted: deprecated 0.1.x auto-detection ({@link createIdempotencyStore}).
+ * @param idempotencyStore - Durable store matching the backend
+ *   (`createFirestoreIdempotencyStore` / `createSupabaseIdempotencyStore`). Required:
+ *   shared logic never picks a backend.
  * @throws Any failure: the caller must answer non-2xx so Stripe retries
  *
- * @version 0.2.0
+ * @version 0.2.1
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
@@ -72,7 +72,7 @@ export async function processWebhook(
   billingConfig: StripeBackConfig,
   updateSubscription: UpdateSubscriptionFn,
   authProvider: BillingAuthProvider | null,
-  idempotencyStore: IdempotencyStore = createIdempotencyStore()
+  idempotencyStore: IdempotencyStore
 ): Promise<{ success: boolean; message: string }> {
   try {
     // Validate data fields only. Valibot strips unknown keys (the hooks) from its

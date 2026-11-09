@@ -22,7 +22,7 @@ import {
   stripe,
   validateStripeEnvironment,
   initStripe,
-} from '../../shared/utils.js'; // ✅ IMPORT INIT
+} from '../../shared/billing/stripeClient.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js'; // ✅ IMPORT SECRET

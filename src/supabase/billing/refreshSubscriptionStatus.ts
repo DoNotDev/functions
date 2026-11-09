@@ -12,11 +12,7 @@
 import type Stripe from 'stripe';
 import * as v from 'valibot';
 
-import {
-  initStripe,
-  stripe,
-  validateStripeEnvironment,
-} from '../../shared/utils.js';
+import { initStripe, stripe, validateStripeEnvironment } from '../../shared/billing/stripeClient.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { createSupabaseAuthProvider } from '../helpers/authProvider.js';
 

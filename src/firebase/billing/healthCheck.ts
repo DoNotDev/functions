@@ -12,7 +12,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 
 import { isFirestoreConfigured } from '../../shared/utils/detectFirestore.js';
-import { stripe } from '../../shared/utils.js';
+import { stripe } from '../../shared/billing/stripeClient.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 
 /**

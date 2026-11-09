@@ -17,7 +17,7 @@ import type { StripeBackConfig } from '@donotdev/core/server';
 
 import { updateUserSubscription } from '../../../shared/billing/helpers/updateUserSubscription.js';
 import { handleError } from '../../../shared/errorHandling.js';
-import { stripe, validateStripeEnvironment } from '../../../shared/utils.js';
+import { stripe, validateStripeEnvironment } from '../../../shared/billing/stripeClient.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
 
 const changePlanSchema = v.object({

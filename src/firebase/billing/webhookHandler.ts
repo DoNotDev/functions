@@ -17,14 +17,14 @@ import type { StripeBackConfig } from '@donotdev/core/server';
 import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { updateUserSubscription } from '../../shared/billing/helpers/updateUserSubscription.js';
-import { createFirestoreIdempotencyStore } from '../../shared/billing/idempotency.js';
+import { createFirestoreIdempotencyStore } from '../../shared/billing/firestoreIdempotency.js';
 import { processWebhook } from '../../shared/billing/webhookHandler.js';
 import { handleError } from '../../shared/errorHandling.js';
 import {
   stripe,
   validateStripeEnvironment,
   initStripe,
-} from '../../shared/utils.js'; // ✅ IMPORT INIT
+} from '../../shared/billing/stripeClient.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey, stripeWebhookSecret } from '../config/secrets.js'; // ✅ IMPORT SECRETS
 

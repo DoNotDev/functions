@@ -22,11 +22,7 @@ import { resolveBillingBackend } from './backend.js';
 import type { VercelBillingOptions } from './backend.js';
 import { createCheckoutAlgorithm } from '../../../shared/billing/createCheckout.js';
 import type { StripeSessionProvider } from '../../../shared/billing/createCheckout.js';
-import {
-  initStripe,
-  stripe,
-  validateStripeEnvironment,
-} from '../../../shared/utils.js';
+import { initStripe, stripe, validateStripeEnvironment } from '../../../shared/billing/stripeClient.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
 
 /**

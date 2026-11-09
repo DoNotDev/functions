@@ -26,11 +26,7 @@ import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 import { assertCheckoutSessionMetadata } from '../../shared/billing/checkoutValidation.js';
 import { createCheckoutAlgorithm } from '../../shared/billing/createCheckout.js';
 import type { StripeSessionProvider } from '../../shared/billing/createCheckout.js';
-import {
-  initStripe,
-  stripe,
-  validateStripeEnvironment,
-} from '../../shared/utils.js';
+import { initStripe, stripe, validateStripeEnvironment } from '../../shared/billing/stripeClient.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';

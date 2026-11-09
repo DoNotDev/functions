@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Mock external deps
 vi.mock('@donotdev/core/server', () => {
@@ -22,7 +22,6 @@ import {
   safeJsonParse,
   validateCollectionName,
   validateDocument,
-  validateStripeEnvironment,
 } from '../utils/internal/validation';
 
 // ---------------------------------------------------------------------------
@@ -154,43 +153,5 @@ describe('validateDocument (internal)', () => {
 
   it('passes without schema (no validation beyond type check)', () => {
     expect(() => validateDocument({ anything: 'goes' })).not.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// validateStripeEnvironment (internal version)
-// ---------------------------------------------------------------------------
-
-describe('validateStripeEnvironment (internal)', () => {
-  const originalEnv = { ...process.env };
-
-  beforeEach(() => {
-    delete process.env.STRIPE_SECRET_KEY;
-    delete process.env.STRIPE_WEBHOOK_SECRET;
-  });
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it('throws when both vars missing', () => {
-    expect(() => validateStripeEnvironment()).toThrow(
-      'Missing required environment variables'
-    );
-    expect(() => validateStripeEnvironment()).toThrow('STRIPE_SECRET_KEY');
-    expect(() => validateStripeEnvironment()).toThrow('STRIPE_WEBHOOK_SECRET');
-  });
-
-  it('throws when STRIPE_WEBHOOK_SECRET missing', () => {
-    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
-
-    expect(() => validateStripeEnvironment()).toThrow('STRIPE_WEBHOOK_SECRET');
-  });
-
-  it('passes when all vars set', () => {
-    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
-    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_x';
-
-    expect(() => validateStripeEnvironment()).not.toThrow();
   });
 });

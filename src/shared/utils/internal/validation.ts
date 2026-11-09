@@ -14,24 +14,6 @@ import * as v from 'valibot';
 import { DoNotDevError } from '@donotdev/core/server';
 
 /**
- * Validates environment variables required for Stripe
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export function validateStripeEnvironment(): void {
-  const required = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
-  const missing = required.filter((key) => !process.env[key]);
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required environment variables: ${missing.join(', ')}`
-    );
-  }
-}
-
-/**
  * Safely parses JSON with error handling
  *
  * @version 0.1.0

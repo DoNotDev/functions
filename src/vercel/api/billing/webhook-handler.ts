@@ -18,7 +18,7 @@ import type { VercelBillingOptions } from './backend.js';
 import { updateUserSubscription } from '../../../shared/billing/helpers/updateUserSubscription.js';
 import { processWebhook } from '../../../shared/billing/webhookHandler.js';
 import { logger } from '../../../shared/logger.js';
-import { stripe } from '../../../shared/utils.js';
+import { stripe } from '../../../shared/billing/stripeClient.js';
 
 /**
  * Create Vercel webhook handler from billing config.

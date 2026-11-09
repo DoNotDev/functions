@@ -34,13 +34,13 @@ export { createCheckoutSession } from './billing/createCheckoutSession.js';
 export { createStripeWebhook } from './billing/stripeWebhook.js';
 export {
   createSupabaseIdempotencyStore,
-  ReservationLostError,
   WEBHOOK_EVENTS_SQL,
-} from '../shared/billing/idempotency.js';
+} from '../shared/billing/supabaseIdempotency.js';
+export { ReservationLostError } from '../shared/billing/idempotencyContract.js';
 export type {
   IdempotencyStore,
   ReservationResult,
-} from '../shared/billing/idempotency.js';
+} from '../shared/billing/idempotencyContract.js';
 // Custom StripeOrder entry points (app request shape, own StripeSessionProvider)
 export { createCheckoutAlgorithm } from '../shared/billing/createCheckout.js';
 export type { StripeSessionProvider } from '../shared/billing/createCheckout.js';

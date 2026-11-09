@@ -9,6 +9,8 @@
  * @author AMBROISE PARK Consulting
  */
 
+import { Buffer } from 'node:buffer';
+
 import * as v from 'valibot';
 
 import {

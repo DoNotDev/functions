@@ -23,12 +23,10 @@
  * @author AMBROISE PARK Consulting
  */
 
-// ServerShim: Prevent client-side imports
-if (typeof globalThis !== 'undefined' && 'window' in globalThis) {
-  throw new Error('Server logger cannot be imported on client side');
-}
-
-// ServerShim: Warn if not in Node.js (e.g., Deno) but don't throw — allow fallback logging
+// Node-only metadata (pid, version) is added when running on Node; Deno runtimes
+// (Supabase Edge) log without it. Server-only by package: @donotdev/functions is
+// never imported by client code, so no runtime browser check (Supabase Edge
+// defines `window`, which made such a check throw on every edge function).
 const _isNodeEnv = typeof process !== 'undefined' && !!process.versions?.node;
 
 let sentryEnabled = false;

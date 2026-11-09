@@ -4,6 +4,11 @@
 
 ### Patch Changes
 
+- **Breaking:** `processWebhook` requires its `idempotencyStore` argument (`createFirestoreIdempotencyStore()` or `createSupabaseIdempotencyStore(...)`). The 7-argument 0.1.x call no longer falls back to Firestore auto-detection. `createIdempotencyStore` stays exported, deprecated.
+- Removed the unused `validateStripeEnvironment` from `@donotdev/functions/shared`.
+- Supabase CRUD list pagination imports `Buffer` from `node:buffer`: Supabase Edge Runtime has no global `Buffer`.
+- The server logger no longer throws on import when `window` exists: Supabase Edge Runtime defines it, which failed every edge function with `WORKER_ERROR`.
+- Supabase CRUD functions no longer load the Stripe SDK, and the Supabase Stripe webhook no longer loads `firebase-admin`.
 - StripeOrder: `resolveLineItems` may return per-order session options (`ResolvedOrder.session`): `taxRateIds` (manual tax; `[]` = no tax for reverse charge; exclusive check), `paymentMethodTypes` (replaces `paymentMethodConfiguration`), `expiresAt` (30 min – 24 h, Stripe window) and `invoiceFooter`. Validated before Stripe is called; omitted options keep the back-config behaviour.
 - `@donotdev/functions/supabase` exports `createCheckoutAlgorithm`, `StripeSessionProvider`, `CheckoutSessionResult`, `STRIPE_API_VERSION_PIN`, `handleEmailRequest`, `createResendProvider` and `EmailProviderAdapter` for app-specific checkout entry points and server-side emails.
 

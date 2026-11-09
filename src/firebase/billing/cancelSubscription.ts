@@ -15,7 +15,7 @@ import * as v from 'valibot';
 import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { cancelUserSubscription } from '../../shared/billing/helpers/subscriptionManagement.js';
-import { initStripe } from '../../shared/utils.js';
+import { initStripe } from '../../shared/billing/stripeClient.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';

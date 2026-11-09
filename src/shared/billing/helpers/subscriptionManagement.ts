@@ -16,7 +16,7 @@ import type { BillingAuthProvider } from '@donotdev/core/server';
 
 import { updateUserSubscription } from './updateUserSubscription.js';
 import { handleError } from '../../errorHandling.js';
-import { stripe, validateStripeEnvironment } from '../../utils.js';
+import { stripe, validateStripeEnvironment } from '../stripeClient.js';
 
 /**
  * Cancel user subscription at period end

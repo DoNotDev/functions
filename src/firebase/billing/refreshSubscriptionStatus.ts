@@ -16,7 +16,7 @@ import * as v from 'valibot';
 import type { RefreshSubscriptionRequest } from '@donotdev/core/server';
 import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
-import { stripe, validateStripeEnvironment } from '../../shared/utils.js';
+import { stripe, validateStripeEnvironment } from '../../shared/billing/stripeClient.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 
