@@ -18,6 +18,7 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
 import * as v from 'valibot';
 
 import {
@@ -26,19 +27,13 @@ import {
   BulkRequestSchema,
 } from '@donotdev/core/server';
 import type { BulkRequest, BulkResponse } from '@donotdev/core/server';
-import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
+import { executeBulk } from '../../../shared/crud/bulkCore.js';
 import { handleError } from '../../../shared/errorHandling.js';
-import {
-  createMetadata,
-  executeBulk,
-  prepareForFirestore,
-  updateMetadata,
-} from '../../../shared/index.js';
+import { prepareForFirestore } from '../../../shared/firebase.js';
+import { createMetadata, updateMetadata } from '../../../shared/metadata.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import { validateCollectionName } from '../../../shared/utils.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 /**
  * Pass-through row schema — the bulk endpoint is URL-routed and does not
@@ -114,6 +109,8 @@ export default async function handler(
     }
     const ops: BulkRequest = parseResult.output;
 
+    const { getFirebaseAdminFirestore } =
+      await import('@donotdev/firebase/server');
     const response: BulkResponse = await executeBulk({
       collection: collection as string,
       ops,

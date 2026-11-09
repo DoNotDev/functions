@@ -10,11 +10,10 @@
  */
 
 import { onCall } from 'firebase-functions/v2/https';
-
-import { withSchemaValidation } from './schemaValidation.js';
-
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import type * as v from 'valibot';
+
+import { withSchemaValidation } from './schemaValidation.js';
 
 /**
  * Creates a Firebase onCall function with schema validation

@@ -15,7 +15,7 @@ import { filterVisibleFields } from '@donotdev/core/server';
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
 import { defaultFieldMapper } from '@donotdev/supabase/server';
 
-import { createMetadata } from '../../shared/index.js';
+import { createMetadata } from '../../shared/metadata.js';
 import { DoNotDevError, validateDocument } from '../../shared/utils.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { checkIdempotency, storeIdempotency } from '../utils/idempotency.js';

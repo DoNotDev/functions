@@ -134,7 +134,13 @@ import { STRIPE_CONFIG } from '../config/constants';
 
 export const createCheckout = onCall(STRIPE_CONFIG, async (request) => {
   try {
-    return await createCheckoutAlgorithm(request.data, firebaseProvider);
+    return await createCheckoutAlgorithm(
+      request.data,
+      request.auth!.uid,
+      stripeSessionProvider, // StripeSessionProvider: createStripeSession + retrieveTaxRate
+      authProvider,
+      billingConfig
+    );
   } catch (error) {
     throw handleError(error);
   }
@@ -145,9 +151,11 @@ export const createCheckout = onCall(STRIPE_CONFIG, async (request) => {
 
 ```typescript
 // functions/src/shared/billing/createCheckout.ts
-export async function createCheckoutAlgorithm(request, provider) {
-  // Complex billing logic that works with both Firebase and Vercel
-  // Uses provider interface for platform-specific operations
+// (request, userId, provider, authProvider, config); the 0.1.x shape
+// (request, provider, authProvider, config) with request.userId still works.
+export async function createCheckoutAlgorithm(...args) {
+  // Billing logic shared by Firebase, Supabase and Vercel.
+  // Platform-specific operations go through the provider interfaces.
 }
 ```
 
@@ -324,17 +332,19 @@ console.log(result.data.subscription); // Updated subscription data
 #### Create Checkout Session
 
 ```typescript
-// POST /api/auth/create-checkout-session
-const response = await fetch('/api/auth/create-checkout-session', {
+// POST /api/billing/create-checkout-session
+// export default createCheckoutSession(billingConfig, { backend: 'firebase' | 'supabase' })
+const response = await fetch('/api/billing/create-checkout-session', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${await user.getIdToken()}`,
   },
   body: JSON.stringify({
-    priceId: 'price_pro_monthly',
-    userId: user.uid,
-    userEmail: user.email,
+    billingConfigKey: 'pro_monthly',
+    lineItems: [{ productId: 'pro_monthly', quantity: 1 }],
+    successUrl: `${location.origin}/billing/success`,
+    cancelUrl: location.href,
     metadata: { plan: 'pro' },
   }),
 });
@@ -505,7 +515,7 @@ stripe listen --forward-to localhost:3000/api/auth/stripe-webhook
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '@donotdev/auth';
 
-function CheckoutButton({ priceId }: { priceId: string }) {
+function CheckoutButton({ billingConfigKey }: { billingConfigKey: string }) {
   const { user } = useAuth();
   const functions = getFunctions();
 
@@ -538,16 +548,17 @@ function CheckoutButton({ priceId }: { priceId: string }) {
   const { user } = useAuth();
 
   const handleCheckout = async () => {
-    const response = await fetch('/api/auth/create-checkout-session', {
+    const response = await fetch('/api/billing/create-checkout-session', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${await user.getIdToken()}`,
       },
       body: JSON.stringify({
-        priceId,
-        userId: user.uid,
-        userEmail: user.email,
+        billingConfigKey,
+        lineItems: [{ productId: billingConfigKey, quantity: 1 }],
+        successUrl: `${location.origin}/billing/success`,
+        cancelUrl: location.href,
       }),
     });
 

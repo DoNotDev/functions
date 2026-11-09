@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as v from 'valibot';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock external deps
 vi.mock('@donotdev/core/server', () => {
@@ -16,14 +16,14 @@ vi.mock('@donotdev/core/server', () => {
   return { DoNotDevError };
 });
 
+import { DoNotDevError } from '@donotdev/core/server';
+
 import {
   safeJsonParse,
   validateCollectionName,
   validateDocument,
   validateStripeEnvironment,
 } from '../utils/internal/validation';
-
-import { DoNotDevError } from '@donotdev/core/server';
 
 // ---------------------------------------------------------------------------
 // safeJsonParse

@@ -10,9 +10,10 @@
  * @author AMBROISE PARK Consulting
  */
 
+import * as v from 'valibot';
+
 import type { AIRouteConfig } from '@donotdev/core/server';
 import { AIChatRequestSchema } from '@donotdev/core/server';
-import * as v from 'valibot';
 
 import { handleAIRequest } from '../../../shared/ai/index.js';
 import { verifyToken } from '../../../shared/utils/internal/auth.js';

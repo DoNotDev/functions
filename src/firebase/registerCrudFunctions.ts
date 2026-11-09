@@ -9,6 +9,8 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { HttpsFunction } from 'firebase-functions/v2/https';
+
 import { createSchemas, getListCardFieldNames } from '@donotdev/core/server';
 import type { Entity } from '@donotdev/core/server';
 
@@ -20,8 +22,6 @@ import {
   deleteEntity,
   listEntities,
 } from './crud/index.js';
-
-import type { HttpsFunction } from 'firebase-functions/v2/https';
 
 interface RegisterOptions {
   prefix?: string;

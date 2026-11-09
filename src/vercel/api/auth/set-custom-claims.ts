@@ -9,12 +9,10 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { handleError } from '../../../shared/errorHandling.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 /**
  * Claim keys that must NEVER be self-assignable — privilege escalation vectors.
@@ -78,6 +76,8 @@ export function createSetCustomClaimsHandler(
         );
       }
 
+      const { getFirebaseAdminAuth } =
+        await import('@donotdev/firebase/server');
       const user = await getFirebaseAdminAuth().getUser(uid);
       const currentClaims = user.customClaims || {};
 

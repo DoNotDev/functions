@@ -9,6 +9,10 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import {
@@ -18,11 +22,6 @@ import {
 
 import { createBaseFunction } from '../baseFunction.js';
 import { AUTH_CONFIG } from '../config/constants.js';
-
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 /**
  * Claim keys that must NEVER be self-assignable — privilege escalation vectors.

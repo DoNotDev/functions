@@ -14,12 +14,8 @@ import * as v from 'valibot';
 
 import { DoNotDevError } from '@donotdev/core/server';
 import type { OAuthPartnerId, UserRole } from '@donotdev/core/server';
-import {
-  getFirebaseAdminAuth,
-  getFirebaseAdminFirestore,
-  initFirebaseAdmin,
-} from '@donotdev/firebase/server';
 
+import { STRIPE_API_VERSION_PIN } from './billing/apiVersion.js';
 import {
   assertAuthenticated as internalAssertAuthenticated,
   assertAdmin as internalAssertAdmin,
@@ -28,41 +24,23 @@ import {
 // Re-export DoNotDevError for external use
 export { DoNotDevError };
 
-/**
- * Get Firestore instance using @donotdev/firebase/server
- * Provider handles initialization and caching
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export function getFirestore() {
-  return getFirebaseAdminFirestore();
-}
-
-/**
- * Get Auth instance using @donotdev/firebase/server
- * Provider handles initialization and caching
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export function getAuth() {
-  return getFirebaseAdminAuth();
-}
-
 // Lazy initialization of Stripe
 let _stripe: Stripe | null = null;
 
 /**
- * Initialize Stripe explicitly (e.g. with a secret from defineSecret)
+ * Initialize Stripe explicitly (e.g. with a secret from defineSecret).
+ * API version: `STRIPE_API_VERSION`, else {@link STRIPE_API_VERSION_PIN}.
  * @param apiKey - Stripe secret key
+ *
+ * @version 0.2.0
+ * @since 0.0.1
+ * @author AMBROISE PARK Consulting
  */
 export function initStripe(apiKey: string) {
   if (!apiKey) throw new Error('Stripe API key is required');
 
-  const apiVersion = process.env.STRIPE_API_VERSION || '2024-12-18.acacia'; // Fallback or strict latest
+  // Unset: the framework pin (pre-basil fields are still read by subscription handlers)
+  const apiVersion = process.env.STRIPE_API_VERSION || STRIPE_API_VERSION_PIN;
 
   _stripe = new Stripe(apiKey, {
     apiVersion: apiVersion as any,
@@ -414,6 +392,8 @@ export async function verifyFirebaseAuthToken(token: string): Promise<string> {
     throw new DoNotDevError('Missing authentication token', 'unauthenticated');
   }
 
+  // Lazy: the Vercel/Supabase entries must load without firebase-admin
+  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
   try {
     const decodedToken = await getFirebaseAdminAuth().verifyIdToken(token);
     return decodedToken.uid;
@@ -449,6 +429,9 @@ export async function findReferences(
     return references;
   }
 
+  // Lazy: the Vercel/Supabase entries must load without firebase-admin
+  const { getFirebaseAdminFirestore } =
+    await import('@donotdev/firebase/server');
   const db = getFirebaseAdminFirestore();
 
   for (const ref of referenceMetadata.incoming) {

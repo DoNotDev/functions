@@ -66,14 +66,14 @@ describe('handleError', () => {
     }
   });
 
-  it('throws DoNotDevError with code "internal" for generic Error', () => {
+  it('throws DoNotDevError with code "internal" and a generic message for generic Error', () => {
     try {
       handleError(new Error('Something broke'));
       expect.fail('should have thrown');
     } catch (error) {
       expect(error).toBeInstanceOf(DoNotDevError);
       expect((error as DoNotDevError).code).toBe('internal');
-      expect((error as DoNotDevError).message).toBe('Something broke');
+      expect((error as DoNotDevError).message).toBe('An unexpected error occurred');
     }
   });
 

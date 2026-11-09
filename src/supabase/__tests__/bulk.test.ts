@@ -6,8 +6,8 @@
  *   inner business logic directly without needing a mock Deno `Request`.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as v from 'valibot';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -78,6 +78,7 @@ function setup(opts?: {
 
   const inner = createSupabaseBulkEntity(
     'events',
+    CreateSchema,
     CreateSchema,
     UpdateSchema,
     access
@@ -226,6 +227,7 @@ describe('createSupabaseBulkEntity', () => {
 
     const inner = createSupabaseBulkEntity(
       'events',
+      CreateSchema,
       CreateSchema,
       UpdateSchema,
       { ...access, delete: 'admin' }

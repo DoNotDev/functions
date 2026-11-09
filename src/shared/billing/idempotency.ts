@@ -1,206 +1,304 @@
 // packages/functions/src/shared/billing/idempotency.ts
 
 /**
- * @fileoverview Adaptive Idempotency for Billing Webhooks
- * @description Auto-detects Firestore, gracefully degrades to in-memory
+ * @fileoverview Webhook idempotency stores
+ * @description Durable, atomic event reservation for Stripe webhooks. Every
+ * webhook entry point passes the store that matches its backend: Firestore
+ * (Firebase) or Postgres (Supabase, see `supabaseIdempotency.ts`). There is no
+ * implicit fallback.
  *
- * @version 0.1.0
+ * Lifecycle per event: `reserve` → process → `markProcessed(ownerToken)`, or
+ * `release(ownerToken)` when processing failed (so the provider's retry is
+ * processed). Only the owner of a reservation may change it. A reservation
+ * whose worker died is retaken after {@link RESERVATION_LEASE_MS}.
+ *
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+
+import * as v from 'valibot';
 
 import { handleError } from '../errorHandling.js';
 import { isFirestoreConfigured } from '../utils/detectFirestore.js';
+import {
+  RESERVATION_LEASE_MS,
+  ReservationLostError,
+  WEBHOOK_EVENT_RETENTION_MS,
+  newOwnerToken,
+} from './idempotencyContract.js';
+import type {
+  LegacyIdempotencyStore,
+  ReservationResult,
+} from './idempotencyContract.js';
+
+export {
+  RESERVATION_LEASE_MS,
+  ReservationLostError,
+  WEBHOOK_EVENT_RETENTION_MS,
+} from './idempotencyContract.js';
+export type {
+  IdempotencyStore,
+  LegacyIdempotencyStore,
+  ReservationResult,
+} from './idempotencyContract.js';
+
+/** Firestore collection holding webhook event reservations (name kept from 0.1.x). */
+const FIRESTORE_COLLECTION = 'webhook_idempotency';
+
+// =============================================================================
+// In-memory (tests only)
+// =============================================================================
 
 /**
- * Idempotency store interface
+ * In-memory store. Single process only: for tests, never for a deployed webhook.
  *
- * @version 0.1.0
- * @since 0.0.1
+ * @version 0.2.0
+ * @since 0.2.0
  * @author AMBROISE PARK Consulting
  */
-export interface IdempotencyStore {
-  isProcessed(eventId: string): Promise<boolean>;
-  markProcessed(eventId: string): Promise<void>;
-  /** Atomic check-and-reserve: returns true if already processed, false if reserved for processing */
-  checkAndReserve(eventId: string): Promise<boolean>;
-}
-
-/**
- * In-memory idempotency (fallback)
- */
-class InMemoryIdempotency implements IdempotencyStore {
-  private store = new Set<string>();
-  private warned = false;
-
-  async isProcessed(eventId: string): Promise<boolean> {
-    if (!this.warned) {
-      // Use handleError for consistent error handling, but don't throw for warnings
-      console.warn(
-        '⚠️  [Idempotency] Using in-memory storage (not production-ready for scale)\n' +
-          '    Enable Firestore for production: https://console.firebase.google.com\n' +
-          '    Good for: Single instance, < 1K webhooks/month\n' +
-          '    Upgrade when: Multiple instances, > 1K webhooks/month'
-      );
-      this.warned = true;
+export function createInMemoryIdempotencyStore(): LegacyIdempotencyStore {
+  const events = new Map<
+    string,
+    { status: 'processing' | 'processed'; ownerToken: string; at: number }
+  >();
+  const reserve = async (eventId: string): Promise<ReservationResult> => {
+    const entry = events.get(eventId);
+    const now = Date.now();
+    if (entry?.status === 'processed') return { state: 'processed' };
+    if (entry && now - entry.at < RESERVATION_LEASE_MS) {
+      return { state: 'in_progress' };
     }
-    return this.store.has(eventId);
-  }
-
-  async markProcessed(eventId: string): Promise<void> {
-    this.store.add(eventId);
-
-    // G58: FIFO cleanup — delete the oldest (first-inserted) entry via iterator
-    if (this.store.size > 1000) {
-      const oldest = this.store.values().next().value;
-      if (oldest) this.store.delete(oldest);
-    }
-  }
-
-  /**
-   * @limitation Not truly atomic for concurrent async operations within the same event loop tick.
-   * Two webhook retries arriving simultaneously could both pass the check.
-   * For production billing, use the Firestore/Supabase implementations which provide true atomicity.
-   */
-  async checkAndReserve(eventId: string): Promise<boolean> {
-    if (this.store.has(eventId)) return true;
-    this.store.add(eventId);
-    return false;
-  }
-}
-
-/**
- * Firestore idempotency (production)
- */
-class FirestoreIdempotency implements IdempotencyStore {
-  private db!: FirebaseFirestore.Firestore;
-  private collection = 'webhook_idempotency';
-  private initialized = false;
-
-  private async init() {
-    if (this.initialized) return;
-
-    const { getFirebaseAdminFirestore } =
-      await import('@donotdev/firebase/server');
-    this.db = getFirebaseAdminFirestore();
-    this.initialized = true;
-  }
-
-  async isProcessed(eventId: string): Promise<boolean> {
-    await this.init();
-
-    try {
-      const doc = await this.db.collection(this.collection).doc(eventId).get();
-
-      if (!doc.exists) return false;
-
-      const data = doc.data();
-      if (!data) return false;
-
-      // Check expiration (30 days)
-      const expiresAt = data.expiresAt || 0;
-      if (expiresAt < Date.now()) {
-        await doc.ref.delete(); // Clean up expired
+    const ownerToken = newOwnerToken();
+    events.set(eventId, { status: 'processing', ownerToken, at: now });
+    return { state: 'reserved', ownerToken };
+  };
+  return {
+    reserve,
+    async checkAndReserve(eventId) {
+      return (await reserve(eventId)).state !== 'reserved';
+    },
+    async markProcessed(eventId, ownerToken) {
+      const entry = events.get(eventId);
+      if (ownerToken !== undefined && entry?.ownerToken !== ownerToken) {
+        throw new ReservationLostError(eventId);
+      }
+      events.set(eventId, {
+        status: 'processed',
+        ownerToken: ownerToken ?? entry?.ownerToken ?? newOwnerToken(),
+        at: Date.now(),
+      });
+    },
+    async release(eventId, ownerToken) {
+      const entry = events.get(eventId);
+      if (entry?.status !== 'processing' || entry.ownerToken !== ownerToken) {
         return false;
       }
-
+      events.delete(eventId);
       return true;
-    } catch (error) {
-      throw handleError(error);
-    }
+    },
+    async isProcessed(eventId) {
+      return events.get(eventId)?.status === 'processed';
+    },
+  };
+}
+
+// =============================================================================
+// Firestore
+// =============================================================================
+
+/** Millisecond reading of an `expiresAt` value: Timestamp (0.2.x) or number (0.1.x). */
+const ExpiresAtSchema = v.union([
+  v.number(),
+  v.pipe(
+    v.custom<{ toMillis(): number }>(
+      (value) =>
+        typeof value === 'object' &&
+        value !== null &&
+        typeof (value as { toMillis?: unknown }).toMillis === 'function',
+      'expiresAt must be a Firestore Timestamp or a number'
+    ),
+    v.transform((timestamp) => timestamp.toMillis())
+  ),
+]);
+
+/**
+ * Stored reservation document. 0.1.x documents carry no `status` and mean processed.
+ */
+const FirestoreEventDocSchema = v.object({
+  status: v.optional(v.picklist(['processing', 'processed'])),
+  ownerToken: v.optional(v.string()),
+  reservedAt: v.optional(v.number()),
+  expiresAt: v.optional(ExpiresAtSchema),
+});
+
+function parseEventDoc(eventId: string, data: unknown) {
+  const result = v.safeParse(FirestoreEventDocSchema, data);
+  if (!result.success) {
+    throw new Error(
+      `Malformed ${FIRESTORE_COLLECTION}/${eventId}: ${result.issues.map((issue) => issue.message).join('; ')}`
+    );
   }
-
-  async markProcessed(eventId: string): Promise<void> {
-    await this.init();
-
-    try {
-      // Use atomic check-and-set to prevent race conditions
-      await this.db.runTransaction(async (transaction) => {
-        const docRef = this.db.collection(this.collection).doc(eventId);
-        const doc = await transaction.get(docRef);
-
-        if (doc.exists) {
-          // Already processed, no need to set again
-          return;
-        }
-
-        // Atomically set the document
-        transaction.set(docRef, {
-          eventId,
-          processedAt: Date.now(),
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
-        });
-      });
-    } catch (error) {
-      throw handleError(error);
-    }
-  }
-
-  async checkAndReserve(eventId: string): Promise<boolean> {
-    await this.init();
-
-    try {
-      let alreadyProcessed = false;
-      await this.db.runTransaction(async (transaction) => {
-        const docRef = this.db.collection(this.collection).doc(eventId);
-        const doc = await transaction.get(docRef);
-
-        if (doc.exists) {
-          const data = doc.data();
-          const expiresAt = data?.expiresAt || 0;
-          if (expiresAt >= Date.now()) {
-            alreadyProcessed = true;
-            return;
-          }
-        }
-
-        // Atomically reserve the event
-        transaction.set(docRef, {
-          eventId,
-          processedAt: Date.now(),
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
-        });
-      });
-      return alreadyProcessed;
-    } catch (error) {
-      throw handleError(error);
-    }
-  }
+  return result.output;
 }
 
 /**
- * Create idempotency store with auto-detection
+ * Firestore-backed store (transactions). Collection: `webhook_idempotency`.
  *
- * Checks for Firestore availability:
- * 1. Running in Firebase Functions environment (auto-configured)
- * 2. Manual Firebase Admin SDK credentials in .env
+ * `expiresAt` is a Firestore Timestamp {@link WEBHOOK_EVENT_RETENTION_MS} after
+ * the last write: enable a TTL policy on `webhook_idempotency.expiresAt` so
+ * Firestore deletes old documents.
  *
- * Falls back to in-memory if Firestore not available
+ * @version 0.2.0
+ * @since 0.2.0
+ * @author AMBROISE PARK Consulting
+ */
+export function createFirestoreIdempotencyStore(): LegacyIdempotencyStore {
+  let firebase: typeof import('@donotdev/firebase/server') | null = null;
+  const load = async () => {
+    if (!firebase) firebase = await import('@donotdev/firebase/server');
+    const firestore = firebase.getFirebaseAdminFirestore();
+    return {
+      firestore,
+      Timestamp: firebase.Timestamp,
+      refOf: (eventId: string) =>
+        firestore.collection(FIRESTORE_COLLECTION).doc(eventId),
+    };
+  };
+
+  const reserve = async (eventId: string): Promise<ReservationResult> => {
+    const { firestore, Timestamp, refOf } = await load();
+    const ref = refOf(eventId);
+    try {
+      return await firestore.runTransaction(async (tx) => {
+        const snapshot = await tx.get(ref);
+        const now = Date.now();
+        if (snapshot.exists) {
+          const data = parseEventDoc(eventId, snapshot.data());
+          if (data.status === 'processing') {
+            if (now - (data.reservedAt ?? 0) < RESERVATION_LEASE_MS) {
+              return { state: 'in_progress' } as const;
+            }
+          } else if ((data.expiresAt ?? 0) >= now) {
+            return { state: 'processed' } as const;
+          }
+        }
+        const ownerToken = newOwnerToken();
+        tx.set(ref, {
+          eventId,
+          status: 'processing',
+          ownerToken,
+          reservedAt: now,
+          expiresAt: Timestamp.fromMillis(now + WEBHOOK_EVENT_RETENTION_MS),
+        });
+        return { state: 'reserved', ownerToken } as const;
+      });
+    } catch (error) {
+      throw handleError(error);
+    }
+  };
+
+  return {
+    reserve,
+    async checkAndReserve(eventId) {
+      return (await reserve(eventId)).state !== 'reserved';
+    },
+    async markProcessed(eventId, ownerToken) {
+      const { firestore, Timestamp, refOf } = await load();
+      const ref = refOf(eventId);
+      const now = Date.now();
+      const processed = {
+        eventId,
+        status: 'processed',
+        processedAt: now,
+        expiresAt: Timestamp.fromMillis(now + WEBHOOK_EVENT_RETENTION_MS),
+      };
+      try {
+        if (ownerToken === undefined) {
+          // 0.1.x call: unconditional write
+          await ref.set(processed);
+          return;
+        }
+        await firestore.runTransaction(async (tx) => {
+          const snapshot = await tx.get(ref);
+          const data = snapshot.exists
+            ? parseEventDoc(eventId, snapshot.data())
+            : null;
+          if (data?.ownerToken !== ownerToken) {
+            throw new ReservationLostError(eventId);
+          }
+          tx.set(ref, { ...processed, ownerToken });
+        });
+      } catch (error) {
+        if (error instanceof ReservationLostError) throw error;
+        throw handleError(error);
+      }
+    },
+    async release(eventId, ownerToken) {
+      const { firestore, refOf } = await load();
+      const ref = refOf(eventId);
+      try {
+        return await firestore.runTransaction(async (tx) => {
+          const snapshot = await tx.get(ref);
+          if (!snapshot.exists) return false;
+          const data = parseEventDoc(eventId, snapshot.data());
+          if (data.status !== 'processing' || data.ownerToken !== ownerToken) {
+            return false;
+          }
+          tx.delete(ref);
+          return true;
+        });
+      } catch (error) {
+        throw handleError(error);
+      }
+    },
+    async isProcessed(eventId) {
+      const { refOf } = await load();
+      try {
+        const snapshot = await refOf(eventId).get();
+        if (!snapshot.exists) return false;
+        const data = parseEventDoc(eventId, snapshot.data());
+        return data.status !== 'processing' && (data.expiresAt ?? 0) >= Date.now();
+      } catch (error) {
+        throw handleError(error);
+      }
+    },
+  };
+}
+
+// =============================================================================
+// 0.1.x auto-detection (deprecated)
+// =============================================================================
+
+let cachedStore: LegacyIdempotencyStore | null = null;
+
+/**
+ * 0.1.x store auto-detection: Firestore when configured, else in-memory.
  *
- * @version 0.1.0
+ * @deprecated In-memory is not durable across instances. Pass an explicit store:
+ * {@link createFirestoreIdempotencyStore} or `createSupabaseIdempotencyStore`.
+ * Framework webhook entry points already do.
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-let cachedStore: IdempotencyStore | null = null;
-
-export function createIdempotencyStore(): IdempotencyStore {
-  // Return cached instance (singleton per function instance)
+export function createIdempotencyStore(): LegacyIdempotencyStore {
   if (cachedStore) return cachedStore;
-
   if (isFirestoreConfigured()) {
-    console.log('✅ [Idempotency] Using Firestore (production-ready)');
-    cachedStore = new FirestoreIdempotency();
+    cachedStore = createFirestoreIdempotencyStore();
   } else {
-    console.warn('⚠️  [Idempotency] Firestore not configured, using in-memory');
-    cachedStore = new InMemoryIdempotency();
+    console.warn(
+      '[Idempotency] Firestore not configured, using in-memory (not durable). Pass an explicit store.'
+    );
+    cachedStore = createInMemoryIdempotencyStore();
   }
-
   return cachedStore;
 }
 
 /**
- * Reset cached store (for testing only)
+ * Reset the store cached by {@link createIdempotencyStore} (tests).
  *
+ * @deprecated See {@link createIdempotencyStore}.
  * @version 0.1.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
@@ -208,3 +306,8 @@ export function createIdempotencyStore(): IdempotencyStore {
 export function resetIdempotencyStore() {
   cachedStore = null;
 }
+
+export {
+  WEBHOOK_EVENTS_SQL,
+  createSupabaseIdempotencyStore,
+} from './supabaseIdempotency.js';

@@ -2,21 +2,26 @@
 
 /**
  * @fileoverview Create checkout session API handler
- * @description Vercel API route for creating Stripe checkout sessions
+ * @description Vercel API route for creating Stripe checkout sessions.
+ * Delegates to the shared createCheckoutAlgorithm (SSOT).
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { CreateCheckoutSessionRequestSchema } from '@donotdev/core/server';
 import type {
   CreateCheckoutSessionRequest,
   StripeBackConfig,
 } from '@donotdev/core/server';
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
+import { resolveBillingBackend } from './backend.js';
+import type { VercelBillingOptions } from './backend.js';
 import { createCheckoutAlgorithm } from '../../../shared/billing/createCheckout.js';
+import type { StripeSessionProvider } from '../../../shared/billing/createCheckout.js';
 import {
   initStripe,
   stripe,
@@ -24,78 +29,37 @@ import {
 } from '../../../shared/utils.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
 
-import type { NextApiRequest, NextApiResponse } from 'next';
-import type * as v from 'valibot';
-
 /**
  * Business logic for creating checkout sessions
  * Base function handles: validation, auth, rate limiting, monitoring
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
  */
 async function createCheckoutSessionLogic(
-  req: NextApiRequest,
   res: NextApiResponse,
   data: CreateCheckoutSessionRequest,
   context: { uid: string },
-  billingConfig: StripeBackConfig
+  billingConfig: StripeBackConfig,
+  options: VercelBillingOptions
 ) {
-  // Initialize Stripe with env var
   initStripe(process.env.STRIPE_SECRET_KEY || '');
   validateStripeEnvironment();
 
-  // Create Stripe provider
-  const stripeProvider = {
-    async createCheckoutSession(params: {
-      priceId?: string;
-      unitAmount?: number;
-      productName?: string;
-      currency?: string;
-      customerEmail?: string;
-      metadata: Record<string, string>;
-      allowPromotionCodes: boolean;
-      successUrl: string;
-      cancelUrl: string;
-      mode?: 'payment' | 'subscription';
-    }) {
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [
-          params.priceId
-            ? { price: params.priceId, quantity: 1 }
-            : {
-                price_data: {
-                  currency: params.currency || 'eur',
-                  unit_amount: params.unitAmount!,
-                  product_data: { name: params.productName! },
-                },
-                quantity: 1,
-              },
-        ],
-        mode: params.mode || 'payment',
-        allow_promotion_codes: params.allowPromotionCodes,
-        success_url: params.successUrl,
-        cancel_url: params.cancelUrl,
-        customer_email: params.customerEmail,
-        metadata: params.metadata,
-      });
+  const stripeProvider: StripeSessionProvider = {
+    async createStripeSession(params) {
+      const session = await stripe.checkout.sessions.create(params);
       return { id: session.id, url: session.url };
     },
-  };
-
-  // Create auth provider
-  const authProvider = {
-    async getUser(userId: string) {
-      const user = await getFirebaseAdminAuth().getUser(userId);
-      return { customClaims: user.customClaims };
+    async retrieveTaxRate(id) {
+      const rate = await stripe.taxRates.retrieve(id);
+      return { id: rate.id, inclusive: rate.inclusive };
     },
   };
 
-  // Use shared algorithm
+  const { authProvider } = await resolveBillingBackend(options.backend);
+
+  // userId comes from the verified token, never from the client
   const result = await createCheckoutAlgorithm(
     data,
+    context.uid,
     stripeProvider,
     authProvider,
     billingConfig
@@ -106,24 +70,34 @@ async function createCheckoutSessionLogic(
 
 /**
  * Vercel API handler for creating checkout sessions
- * Base function handles all common concerns automatically
  *
- * @version 0.1.0
+ * @example
+ * ```typescript
+ * // api/billing/create-checkout-session.ts
+ * import { createCheckoutSession } from '@donotdev/functions/vercel';
+ * import { billingConfig } from '../../config/billing';
+ *
+ * export default createCheckoutSession(billingConfig, { backend: 'supabase' });
+ * ```
+ *
+ * @param billingConfig - App back config
+ * @param options - Backend of the app (token verification, rate limiting, user lookup)
+ *
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-const createCheckoutSession = (
+export function createCheckoutSession(
   billingConfig: StripeBackConfig,
-  customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
-) => {
-  const schema = customSchema || CreateCheckoutSessionRequestSchema;
+  options: VercelBillingOptions
+) {
   return createVercelBaseFunction(
     'POST',
-    schema,
+    CreateCheckoutSessionRequestSchema,
     'create_checkout_session',
-    (req, res, data, context) =>
-      createCheckoutSessionLogic(req, res, data, context, billingConfig)
+    (_req: NextApiRequest, res, data, context) =>
+      createCheckoutSessionLogic(res, data, context, billingConfig, options),
+    undefined,
+    options.backend
   );
-};
-
-export default createCheckoutSession;
+}

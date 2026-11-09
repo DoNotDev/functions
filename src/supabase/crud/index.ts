@@ -16,6 +16,7 @@ export { createSupabaseDeleteEntity } from './delete.js';
 export { createSupabaseListEntities } from './list.js';
 export { createSupabaseAggregateEntities } from './aggregate.js';
 export { createSupabaseBulkEntity } from './bulk.js';
+export { createEntityStore } from './entityStore.js';
 
 export type { GetEntityRequest } from './get.js';
 export type { CreateEntityRequest } from './create.js';
@@ -24,3 +25,10 @@ export type { DeleteEntityRequest, ReferenceMetadata } from './delete.js';
 export type { ListEntityRequest } from './list.js';
 export type { AggregateEntityRequest } from './aggregate.js';
 export type { BulkEntityRequest } from './bulk.js';
+export type {
+  EntityStore,
+  EntityStoreCondition,
+  EntityStoreOperator,
+  EntityStoreQuery,
+  EntityStoreValues,
+} from './entityStore.js';

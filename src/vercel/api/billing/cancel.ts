@@ -9,14 +9,11 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
 import * as v from 'valibot';
-
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { cancelUserSubscription } from '../../../shared/billing/helpers/subscriptionManagement.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 const cancelSubscriptionSchema = v.object({
   userId: v.string(),
@@ -39,6 +36,7 @@ async function cancelSubscriptionLogic(
   // C7/W5: Use context.uid — ignore client-supplied userId to prevent IDOR.
   const userId = context.uid;
 
+  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
   const authProvider = {
     async getUser(uid: string) {
       return getFirebaseAdminAuth().getUser(uid);

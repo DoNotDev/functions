@@ -10,15 +10,63 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { hasProvider, getProvider } from '@donotdev/core/server';
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
-
 import type { NextApiRequest } from 'next';
+import * as v from 'valibot';
+
+import { DoNotDevError, hasProvider, getProvider } from '@donotdev/core/server';
+
+/**
+ * Auth backends a server function can be explicitly configured with.
+ *
+ * @version 0.2.0
+ * @since 0.2.0
+ * @author AMBROISE PARK Consulting
+ */
+export const AuthBackendSchema = v.picklist(['firebase', 'supabase']);
 
 /** Auth provider type for explicit configuration */
-export type AuthProvider = 'firebase' | 'supabase';
+export type AuthProvider = v.InferOutput<typeof AuthBackendSchema>;
+
+/**
+ * Validate an auth backend at runtime. Values typed as `AuthProvider` can
+ * still arrive as arbitrary strings from JS or env-driven config, and an
+ * unknown value must never silently run as Firebase.
+ *
+ * @param backend - Value to validate
+ * @returns The validated backend
+ * @throws DoNotDevError (`invalid-argument`) naming the allowed values
+ *
+ * @example
+ * ```typescript
+ * const backend = parseAuthBackend(process.env.AUTH_BACKEND); // 'firebase' | 'supabase'
+ * ```
+ *
+ * @version 0.2.0
+ * @since 0.2.0
+ * @author AMBROISE PARK Consulting
+ */
+export function parseAuthBackend(backend: unknown): AuthProvider {
+  const result = v.safeParse(AuthBackendSchema, backend);
+  if (!result.success) {
+    const allowed = AuthBackendSchema.options.map((o) => `'${o}'`).join(', ');
+    throw new DoNotDevError(
+      `Invalid backend ${JSON.stringify(backend)}: expected one of ${allowed}`,
+      'invalid-argument'
+    );
+  }
+  return result.output;
+}
 
 // IMPORTANT: Don't call getAuth() at module load - breaks Firebase deployment
+
+/**
+ * Firebase Admin Auth, loaded on first use. `firebase-admin` is an optional
+ * peer: Supabase deployments never load it.
+ */
+async function getFirebaseAuth() {
+  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
+  return getFirebaseAdminAuth();
+}
 
 /**
  * Validates that user is authenticated
@@ -54,7 +102,7 @@ export async function assertAdmin(uid: string): Promise<string> {
       claims = (user?.customClaims as Record<string, unknown>) ?? {};
     } else {
       // Legacy Firebase path
-      const user = await getFirebaseAdminAuth().getUser(uid);
+      const user = await (await getFirebaseAuth()).getUser(uid);
       claims = user.customClaims ?? {};
     }
 
@@ -134,7 +182,7 @@ export async function verifyToken(
     }
 
     if (provider === 'firebase') {
-      const decodedToken = await getFirebaseAdminAuth().verifyIdToken(token);
+      const decodedToken = await (await getFirebaseAuth()).verifyIdToken(token);
       return { uid: decodedToken.uid };
     }
 
@@ -145,7 +193,7 @@ export async function verifyToken(
     }
 
     // Legacy Firebase path
-    const decodedToken = await getFirebaseAdminAuth().verifyIdToken(token);
+    const decodedToken = await (await getFirebaseAuth()).verifyIdToken(token);
     return { uid: decodedToken.uid };
   } catch (error) {
     throw new Error('Invalid or expired token');

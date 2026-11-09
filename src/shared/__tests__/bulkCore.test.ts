@@ -9,13 +9,14 @@
  *   firing once with counts.
  */
 
-import { describe, it, expect, vi } from 'vitest';
 import * as v from 'valibot';
+import { describe, it, expect, vi } from 'vitest';
 
-import { executeBulk } from '../crud/bulkCore.js';
 import { BulkCollisionError } from '@donotdev/core/server';
 import { DoNotDevError } from '@donotdev/core/server';
 import { DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
+
+import { executeBulk } from '../crud/bulkCore.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures

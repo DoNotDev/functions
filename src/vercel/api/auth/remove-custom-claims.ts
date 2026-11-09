@@ -9,12 +9,10 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { handleError } from '../../../shared/errorHandling.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
   req: NextApiRequest,
@@ -33,6 +31,7 @@ export default async function handler(
       throw handleError(new Error('claimsToRemove must be an array'));
     }
 
+    const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
     const user = await getFirebaseAdminAuth().getUser(uid);
     const currentClaims = user.customClaims || {};
 

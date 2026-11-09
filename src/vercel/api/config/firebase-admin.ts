@@ -9,8 +9,6 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { getFirebaseAdminApp } from '@donotdev/firebase/server';
-
 import type { App } from 'firebase-admin/app';
 
 /**
@@ -22,6 +20,7 @@ import type { App } from 'firebase-admin/app';
  * @author AMBROISE PARK Consulting
  */
 export async function initializeFirebaseAdmin(): Promise<App> {
+  const { getFirebaseAdminApp } = await import('@donotdev/firebase/server');
   return await getFirebaseAdminApp();
 }
 
@@ -34,5 +33,6 @@ export async function initializeFirebaseAdmin(): Promise<App> {
  * @author AMBROISE PARK Consulting
  */
 export async function getFirebaseAdmin(): Promise<App> {
+  const { getFirebaseAdminApp } = await import('@donotdev/firebase/server');
   return await getFirebaseAdminApp();
 }

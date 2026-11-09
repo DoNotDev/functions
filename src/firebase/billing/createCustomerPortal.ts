@@ -9,6 +9,10 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
@@ -22,11 +26,6 @@ import {
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js'; // ✅ IMPORT SECRET
-
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 const customerPortalSchema = v.object({
   userId: v.string(),

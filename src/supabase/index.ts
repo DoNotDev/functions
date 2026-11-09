@@ -31,6 +31,20 @@ export { createGetUserAuthStatus } from './auth/getUserAuthStatus.js';
 
 // Billing
 export { createCheckoutSession } from './billing/createCheckoutSession.js';
+export { createStripeWebhook } from './billing/stripeWebhook.js';
+export {
+  createSupabaseIdempotencyStore,
+  ReservationLostError,
+  WEBHOOK_EVENTS_SQL,
+} from '../shared/billing/idempotency.js';
+export type {
+  IdempotencyStore,
+  ReservationResult,
+} from '../shared/billing/idempotency.js';
+// Custom StripeOrder entry points (app request shape, own StripeSessionProvider)
+export { createCheckoutAlgorithm } from '../shared/billing/createCheckout.js';
+export type { StripeSessionProvider } from '../shared/billing/createCheckout.js';
+export { STRIPE_API_VERSION_PIN } from '../shared/billing/apiVersion.js';
 export { createCancelSubscription } from './billing/cancelSubscription.js';
 export { createChangePlan } from './billing/changePlan.js';
 export { createCustomerPortal } from './billing/createCustomerPortal.js';
@@ -58,6 +72,12 @@ export type {
 
 // Email
 export { createEmailFunction } from './email/createEmailFunction.js';
+// Server-side sending from app functions (webhooks, jobs): same templates and provider
+export {
+  handleEmailRequest,
+  createResendProvider,
+} from '../shared/email/index.js';
+export type { EmailProviderAdapter } from '../shared/email/index.js';
 
 // CRUD
 export {
@@ -67,6 +87,7 @@ export {
   createSupabaseDeleteEntity,
   createSupabaseListEntities,
   createSupabaseAggregateEntities,
+  createEntityStore,
 } from './crud/index.js';
 export { createSupabaseCrudFunctions } from './registerCrudFunctions.js';
 export type {
@@ -77,6 +98,11 @@ export type {
   ListEntityRequest,
   AggregateEntityRequest,
   ReferenceMetadata,
+  EntityStore,
+  EntityStoreCondition,
+  EntityStoreOperator,
+  EntityStoreQuery,
+  EntityStoreValues,
 } from './crud/index.js';
 
 // Utils

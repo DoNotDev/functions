@@ -9,23 +9,22 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+
 import { DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
 import type { UpdateEntityData } from '@donotdev/core/server';
-import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
 import { handleError } from '../../../shared/errorHandling.js';
 import {
   prepareForFirestore,
   transformFirestoreData,
-} from '../../../shared/index.js';
-import { updateMetadata } from '../../../shared/index.js';
+} from '../../../shared/firebase.js';
+import { updateMetadata } from '../../../shared/metadata.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import {
   validateCollectionName,
   validateDocument,
 } from '../../../shared/utils.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
   req: NextApiRequest,
@@ -48,6 +47,8 @@ export default async function handler(
     // W22: Validate collection name from client-supplied schema
     validateCollectionName(schema.metadata.collection);
 
+    const { getFirebaseAdminFirestore } =
+      await import('@donotdev/firebase/server');
     const db = getFirebaseAdminFirestore();
 
     // Get current document to merge with payload for status check

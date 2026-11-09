@@ -2,66 +2,52 @@
 
 /**
  * @fileoverview Stripe webhook handler
- * @description Handles Stripe webhook events for subscription management
+ * @description Verifies, deduplicates and routes Stripe webhook events for
+ * one-time payments, subscriptions (`tierWebhookEvents.ts`) and multi-line
+ * orders (`orderWebhook.ts`).
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
 
-import {
-  validateStripeBackConfig,
-  SUBSCRIPTION_STATUS,
-  SUBSCRIPTION_TIERS,
-} from '@donotdev/core/server';
-import type { StripeBackConfig } from '@donotdev/core/server';
+import type Stripe from 'stripe';
+
+import { DoNotDevError, validateStripeBackConfig } from '@donotdev/core/server';
+import type { BillingAuthProvider, StripeBackConfig, UpdateSubscriptionFn } from '@donotdev/core/server';
 
 import { handleError } from '../errorHandling.js';
 import { logger } from '../logger.js';
 import { createIdempotencyStore } from './idempotency.js';
-import { calculateSubscriptionEndDate } from '../utils/external/date.js';
+import { ReservationLostError } from './idempotencyContract.js';
+import type { IdempotencyStore } from './idempotencyContract.js';
+import { handleOrderSessionEvent } from './orderWebhook.js';
+import type { OrderSessionEventType } from './orderWebhook.js';
+import {
+  handleInvoicePaymentSucceeded,
+  handlePaymentFailed,
+  handleSubscriptionDeleted,
+  handleTierCheckoutEvent,
+} from './tierWebhookEvents.js';
 
-import type {
-  SubscriptionData,
-  AuthProvider,
-} from './helpers/updateUserSubscription.js';
-import type Stripe from 'stripe';
+/** Attempts to record a processed event before answering non-2xx. */
+const MARK_PROCESSED_ATTEMPTS = 3;
 
-// W7: Lazy singleton — resolving at import time reads env vars / Firebase Admin
-// before they are fully injected (e.g., defineSecret values on Firebase Functions v2).
-// Resolved on first use instead.
-let _idempotencyStore: ReturnType<typeof createIdempotencyStore> | null = null;
-function getIdempotencyStore() {
-  if (!_idempotencyStore) {
-    _idempotencyStore = createIdempotencyStore();
-  }
-  return _idempotencyStore;
-}
+/** Backoff between markProcessed attempts (multiplied by the attempt number). */
+const MARK_PROCESSED_BACKOFF_MS = 200;
 
 /**
- * Platform-agnostic auth provider interface for webhook handlers
- */
-export interface WebhookAuthProvider {
-  getUser(userId: string): Promise<{
-    customClaims?: Record<string, unknown>;
-  }>;
-  setCustomUserClaims(
-    userId: string,
-    claims: Record<string, unknown>
-  ): Promise<void>;
-}
-
-/**
- * Subscription update function type
- */
-export type UpdateSubscriptionFn = (
-  userId: string,
-  data: SubscriptionData,
-  authProvider: AuthProvider
-) => Promise<void>;
-
-/**
- * Process webhook with automatic idempotency detection
+ * Verify, deduplicate and route one Stripe webhook event.
+ *
+ * Idempotency (at-least-once): the event is reserved before routing.
+ * - Already processed → resolves "Event already processed" (answer 2xx).
+ * - Another delivery holds a live lease → throws `unavailable` (answer non-2xx,
+ *   Stripe retries later; an abandoned lease is retaken after it expires).
+ * - Routing throws → the reservation is released and the error rethrown, so
+ *   Stripe's retry is processed.
+ * - Routing succeeds → the event is marked processed, retried a bounded number
+ *   of times; if it still fails the error is rethrown WITHOUT releasing, so the
+ *   event is re-run after the lease. Hooks must therefore be idempotent.
  *
  * @param rawBody - Raw request body
  * @param signature - Stripe signature
@@ -69,8 +55,12 @@ export type UpdateSubscriptionFn = (
  * @param stripe - Stripe instance
  * @param billingConfig - Billing configuration
  * @param updateSubscription - Function to update user subscription
+ * @param authProvider - Auth provider for subscription claims (null: subscription events fail)
+ * @param idempotencyStore - Durable store matching the backend (Firestore / Supabase).
+ *   Omitted: deprecated 0.1.x auto-detection ({@link createIdempotencyStore}).
+ * @throws Any failure: the caller must answer non-2xx so Stripe retries
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
@@ -79,33 +69,49 @@ export async function processWebhook(
   signature: string,
   webhookSecret: string,
   stripe: Stripe,
-  billingConfig: unknown,
+  billingConfig: StripeBackConfig,
   updateSubscription: UpdateSubscriptionFn,
-  authProvider: WebhookAuthProvider | null
+  authProvider: BillingAuthProvider | null,
+  idempotencyStore: IdempotencyStore = createIdempotencyStore()
 ): Promise<{ success: boolean; message: string }> {
   try {
-    // Validate billing config
-    const config = validateStripeBackConfig(billingConfig);
+    // Validate data fields only. Valibot strips unknown keys (the hooks) from its
+    // output, so routing must use the original config object, never the parse result.
+    validateStripeBackConfig(billingConfig);
+    const config = billingConfig;
 
     // Verify webhook signature
-    const event = stripe.webhooks.constructEvent(
+    // Async variant: works on Node and on Web Crypto runtimes (Deno, Workers)
+    const event = await stripe.webhooks.constructEventAsync(
       rawBody,
       signature,
       webhookSecret
     );
 
-    // Log event processing (non-critical, so we don't throw)
     logger.info('[Webhook] Processing event', {
       eventType: event.type,
       eventId: event.id,
       operation: 'webhook_processing',
     });
 
-    // ✅ CHECK+RESERVE: Atomic idempotency (eliminates TOCTOU race between check and mark)
-    if (await getIdempotencyStore().checkAndReserve(event.id)) {
+    const reservation = await idempotencyStore.reserve(event.id);
+    if (reservation.state === 'processed') {
       logger.info('[Webhook] Already processed', { eventId: event.id });
       return { success: true, message: 'Event already processed' };
     }
+    if (reservation.state === 'in_progress') {
+      logger.warn('[Webhook] Event in progress in another delivery', {
+        eventId: event.id,
+        eventType: event.type,
+        operation: 'webhook_in_progress',
+      });
+      throw new DoNotDevError(
+        `Stripe event ${event.id} is being processed by another delivery; answering non-2xx so Stripe retries it`,
+        'unavailable',
+        { details: { eventId: event.id, reason: 'webhook_event_in_progress' } }
+      );
+    }
+    const { ownerToken } = reservation;
 
     // G59: Warn when authProvider is null — subscription update events will fail
     if (!authProvider) {
@@ -118,12 +124,100 @@ export async function processWebhook(
       );
     }
 
-    // Route to handler
-    await routeEvent(event, config, updateSubscription, stripe, authProvider);
+    // Route to handler. On failure, release the reservation so the retry runs.
+    try {
+      await routeEvent(event, config, updateSubscription, stripe, authProvider);
+    } catch (routingError) {
+      logger.error('[Webhook] Event processing failed, releasing reservation', {
+        error:
+          routingError instanceof Error
+            ? routingError
+            : new Error(String(routingError)),
+        eventId: event.id,
+        eventType: event.type,
+        operation: 'webhook_routing',
+      });
+      await releaseReservation(idempotencyStore, event.id, ownerToken);
+      throw routingError;
+    }
 
+    await markProcessedWithRetry(idempotencyStore, event.id, ownerToken);
     return { success: true, message: 'Webhook processed' };
   } catch (error) {
     throw handleError(error);
+  }
+}
+
+/** Release after a routing failure. Never masks the routing error. */
+async function releaseReservation(
+  store: IdempotencyStore,
+  eventId: string,
+  ownerToken: string
+): Promise<void> {
+  try {
+    if (!(await store.release(eventId, ownerToken))) {
+      logger.warn('[Webhook] Reservation not released: no longer owned', {
+        eventId,
+        operation: 'idempotency_release_stale',
+      });
+    }
+  } catch (releaseError) {
+    logger.error('[Webhook] Failed to release idempotency reservation', {
+      error:
+        releaseError instanceof Error
+          ? releaseError
+          : new Error(String(releaseError)),
+      eventId,
+      operation: 'idempotency_release',
+    });
+  }
+}
+
+/**
+ * Record a processed event. Transient store errors are retried; a lost
+ * reservation is not (another delivery owns the event). The final error is
+ * rethrown without releasing: Stripe retries after the lease and the event is
+ * processed again (at-least-once).
+ */
+async function markProcessedWithRetry(
+  store: IdempotencyStore,
+  eventId: string,
+  ownerToken: string
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await store.markProcessed(eventId, ownerToken);
+      return;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      if (error instanceof ReservationLostError) {
+        logger.error(
+          '[Webhook] Event processed but its reservation was retaken by another delivery; hooks may run twice',
+          { error: err, eventId, operation: 'idempotency_mark_processed_lost' }
+        );
+        throw error;
+      }
+      if (attempt >= MARK_PROCESSED_ATTEMPTS) {
+        logger.error(
+          '[Webhook] Event processed but not recorded; answering non-2xx, Stripe will redeliver after the lease and hooks re-run',
+          {
+            error: err,
+            eventId,
+            attempts: attempt,
+            operation: 'idempotency_mark_processed_failed',
+          }
+        );
+        throw error;
+      }
+      logger.warn('[Webhook] markProcessed failed, retrying', {
+        eventId,
+        attempt,
+        error: err.message,
+      });
+      await new Promise((resolve) =>
+        setTimeout(resolve, MARK_PROCESSED_BACKOFF_MS * attempt)
+      );
+    }
   }
 }
 
@@ -139,14 +233,21 @@ async function routeEvent(
   config: StripeBackConfig,
   updateSubscription: UpdateSubscriptionFn,
   stripe: Stripe,
-  authProvider: WebhookAuthProvider | null
+  authProvider: BillingAuthProvider | null
 ): Promise<void> {
   switch (event.type) {
     case 'checkout.session.completed':
-      await handleCheckoutCompleted(
-        event.data.object as Stripe.Checkout.Session,
+    case 'checkout.session.async_payment_succeeded':
+    case 'checkout.session.async_payment_failed':
+    case 'checkout.session.expired':
+      await handleCheckoutSessionEvent(
+        event.type,
+        event.id,
+        event.api_version,
+        event.data.object,
         config,
         updateSubscription,
+        stripe,
         authProvider
       );
       break;
@@ -181,342 +282,44 @@ async function routeEvent(
 }
 
 /**
- * Handle checkout completed with graceful hook execution
+ * Route Checkout Session events: StripeOrder items go to the order hooks,
+ * StripePayment / StripeSubscription items to the tier handlers.
  *
- * @version 0.1.0
- * @since 0.0.1
+ * @version 0.2.0
+ * @since 0.2.0
  * @author AMBROISE PARK Consulting
  */
-async function handleCheckoutCompleted(
+async function handleCheckoutSessionEvent(
+  eventType: OrderSessionEventType,
+  eventId: string,
+  apiVersion: string | null,
   session: Stripe.Checkout.Session,
   config: StripeBackConfig,
   updateSubscription: UpdateSubscriptionFn,
-  authProvider: WebhookAuthProvider | null
-): Promise<void> {
-  const { userId, billingConfigKey } = session.metadata || {};
-
-  if (!userId || !billingConfigKey) {
-    throw handleError(
-      new Error(
-        `Missing required metadata: userId=${userId}, billingConfigKey=${billingConfigKey}`
-      )
-    );
-  }
-
-  const billingItem = config[billingConfigKey];
-  if (!billingItem) {
-    throw handleError(
-      new Error(`Unknown billing config key: ${billingConfigKey}`)
-    );
-  }
-
-  logger.info('[Webhook] Processing purchase', {
-    userId,
-    configKey: billingConfigKey,
-    type: billingItem.type,
-    operation: 'purchase_processing',
-  });
-
-  // Update subscription
-  if (billingItem.type === 'StripePayment') {
-    if (!authProvider) {
-      throw handleError(
-        new Error('Auth provider required for subscription updates')
-      );
-    }
-    await updateSubscription(
-      userId,
-      {
-        tier: billingItem.tier,
-        status: SUBSCRIPTION_STATUS.ACTIVE,
-        subscriptionEnd: calculateSubscriptionEndDate(billingItem.duration),
-        customerId: session.customer as string,
-      },
-      authProvider
-    );
-
-    // Execute hook with graceful error handling
-    if (billingItem.onPurchaseSuccess) {
-      try {
-        await billingItem.onPurchaseSuccess(userId, session.metadata || {});
-      } catch (error) {
-        // Hook failures are non-critical - payment already processed
-        // Log for manual intervention but don't fail the webhook
-        logger.error('[Webhook] Hook failed (non-critical)', {
-          error: error instanceof Error ? error : new Error(String(error)),
-          hookName: 'onPurchaseSuccess',
-          userId,
-          operation: 'hook_execution',
-        });
-      }
-    }
-  }
-
-  if (billingItem.type === 'StripeSubscription') {
-    if (!authProvider) {
-      throw handleError(
-        new Error('Auth provider required for subscription updates')
-      );
-    }
-    await updateSubscription(
-      userId,
-      {
-        tier: billingItem.tier,
-        status: SUBSCRIPTION_STATUS.ACTIVE,
-        subscriptionEnd: calculateSubscriptionEndDate(billingItem.duration),
-        subscriptionId: session.subscription as string,
-        customerId: session.customer as string,
-      },
-      authProvider
-    );
-
-    // Execute hook with graceful error handling
-    if (billingItem.onSubscriptionCreated) {
-      try {
-        await billingItem.onSubscriptionCreated(userId, session.metadata || {});
-      } catch (error) {
-        // Hook failures are non-critical - subscription already created
-        // Log for manual intervention but don't fail the webhook
-        logger.error('[Webhook] Hook failed (non-critical)', {
-          error: error instanceof Error ? error : new Error(String(error)),
-          hookName: 'onSubscriptionCreated',
-          userId,
-          operation: 'hook_execution',
-        });
-      }
-    }
-  }
-
-  logger.info('[Webhook] Purchase processed', {
-    userId,
-    configKey: billingConfigKey,
-    operation: 'purchase_processed',
-  });
-}
-
-/**
- * Handle subscription renewal
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-async function handleInvoicePaymentSucceeded(
-  invoice: Stripe.Invoice,
-  config: StripeBackConfig,
-  updateSubscription: UpdateSubscriptionFn,
   stripe: Stripe,
-  authProvider: WebhookAuthProvider | null
+  authProvider: BillingAuthProvider | null
 ): Promise<void> {
-  const subscriptionId = (invoice as any).subscription as string;
-  if (!subscriptionId) return;
+  const billingConfigKey = session.metadata?.billingConfigKey;
+  const billingItem = billingConfigKey ? config[billingConfigKey] : undefined;
 
-  // ✅ FIX: Fetch subscription to get metadata
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  const { userId, billingConfigKey } = subscription.metadata || {};
-  if (!userId || !billingConfigKey) {
-    // G60: Log when subscription metadata is missing — silent return loses the event
-    logger.error(
-      '[Webhook] Subscription metadata missing userId or billingConfigKey',
-      {
-        subscriptionId,
-        hasUserId: !!userId,
-        hasBillingConfigKey: !!billingConfigKey,
-        operation: 'invoice_payment_succeeded_metadata_missing',
-      }
-    );
-    return;
-  }
-
-  const billingItem = config[billingConfigKey];
-  if (!billingItem || billingItem.type !== 'StripeSubscription') return;
-
-  // Renew subscription
-  if (!authProvider) {
-    throw handleError(
-      new Error('Auth provider required for subscription updates')
-    );
-  }
-  await updateSubscription(
-    userId,
-    {
-      tier: billingItem.tier,
-      status: SUBSCRIPTION_STATUS.ACTIVE,
-      subscriptionEnd: calculateSubscriptionEndDate(billingItem.duration),
-      subscriptionId: subscriptionId,
-      customerId: invoice.customer as string,
-    },
-    authProvider
-  );
-
-  // Execute hook with graceful error handling
-  if (billingItem.onSubscriptionRenewed) {
-    try {
-      await billingItem.onSubscriptionRenewed(
-        userId,
-        subscription.metadata || {}
-      );
-    } catch (error) {
-      // Hook failures are non-critical - subscription already renewed
-      // Log for manual intervention but don't fail the webhook
-      logger.error('[Webhook] Hook failed (non-critical)', {
-        error: error instanceof Error ? error : new Error(String(error)),
-        hookName: 'onSubscriptionRenewed',
-        userId,
-        operation: 'hook_execution',
-      });
-    }
-  }
-
-  logger.info('[Webhook] Subscription renewed', {
-    userId,
-    billingConfigKey,
-    operation: 'subscription_renewed',
-  });
-}
-
-/**
- * Handle subscription cancellation
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-async function handleSubscriptionDeleted(
-  subscription: Stripe.Subscription,
-  config: StripeBackConfig,
-  updateSubscription: UpdateSubscriptionFn,
-  authProvider: WebhookAuthProvider | null
-): Promise<void> {
-  const { userId, billingConfigKey } = subscription.metadata || {};
-  if (!userId || !billingConfigKey) return;
-
-  const billingItem = config[billingConfigKey];
-  if (!billingItem || billingItem.type !== 'StripeSubscription') return;
-
-  // Update to cancelled
-  if (!authProvider) {
-    throw handleError(
-      new Error('Auth provider required for subscription updates')
-    );
-  }
-  await updateSubscription(
-    userId,
-    {
-      tier: SUBSCRIPTION_TIERS.FREE,
-      status: SUBSCRIPTION_STATUS.CANCELED,
-      subscriptionEnd: new Date(
-        (subscription as any).current_period_end * 1000
-      ).toISOString(),
-      subscriptionId: subscription.id,
-      customerId: subscription.customer as string,
-    },
-    authProvider
-  );
-
-  // Execute hook with graceful error handling
-  if (billingItem.onSubscriptionCancelled) {
-    try {
-      await billingItem.onSubscriptionCancelled(
-        userId,
-        subscription.metadata || {}
-      );
-    } catch (error) {
-      // Hook failures are non-critical - subscription already cancelled
-      // Log for manual intervention but don't fail the webhook
-      logger.error('[Webhook] Hook failed (non-critical)', {
-        error: error instanceof Error ? error : new Error(String(error)),
-        hookName: 'onSubscriptionCancelled',
-        userId,
-        operation: 'hook_execution',
-      });
-    }
-  }
-
-  logger.info('[Webhook] Subscription cancelled', {
-    userId,
-    billingConfigKey,
-    operation: 'subscription_cancelled',
-  });
-}
-
-/**
- * Handle payment failure
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-async function handlePaymentFailed(
-  invoice: Stripe.Invoice,
-  config: StripeBackConfig
-): Promise<void> {
-  const { userId, billingConfigKey } = invoice.metadata || {};
-  if (!userId || !billingConfigKey) {
-    logger.warn('[Webhook] Payment failed - missing metadata', {
-      invoiceId: invoice.id,
-      hasUserId: !!userId,
-      hasBillingConfigKey: !!billingConfigKey,
-      operation: 'payment_failed_metadata_missing',
-    });
-    return;
-  }
-
-  const billingItem = config[billingConfigKey];
-  if (!billingItem) {
-    logger.error('[Webhook] Payment failed - unknown billing config', {
-      error: new Error(`Unknown billing config key: ${billingConfigKey}`),
-      userId,
+  if (billingConfigKey && billingItem?.type === 'StripeOrder') {
+    await handleOrderSessionEvent(
+      eventType,
+      eventId,
+      apiVersion,
+      session,
       billingConfigKey,
-      operation: 'payment_failed_unknown_config',
-    });
+      billingItem,
+      stripe
+    );
     return;
   }
 
-  // Execute hooks with graceful error handling
-  if (billingItem.type === 'StripePayment' && billingItem.onPurchaseFailure) {
-    try {
-      // Pass the actual metadata - we've already validated it exists
-      await billingItem.onPurchaseFailure(userId, invoice.metadata || {});
-    } catch (error) {
-      // Hook failures are non-critical - payment already failed
-      // Log for manual intervention but don't fail the webhook
-      logger.error('[Webhook] Hook failed (non-critical)', {
-        error: error instanceof Error ? error : new Error(String(error)),
-        hookName: 'onPurchaseFailure',
-        userId,
-        operation: 'hook_execution',
-      });
-    }
-  }
-
-  if (
-    billingItem.type === 'StripeSubscription' &&
-    billingItem.onPaymentFailed
-  ) {
-    try {
-      await billingItem.onPaymentFailed(userId, invoice.metadata || {});
-    } catch (error) {
-      // Hook failures are non-critical - payment already failed
-      // Log for manual intervention but don't fail the webhook
-      logger.error('[Webhook] Hook failed (non-critical)', {
-        error: error instanceof Error ? error : new Error(String(error)),
-        hookName: 'onPaymentFailed',
-        userId,
-        operation: 'hook_execution',
-      });
-    }
-  }
-
-  logger.warn('[Webhook] Payment failed', {
-    userId,
-    billingConfigKey,
-    operation: 'payment_failed',
-  });
+  await handleTierCheckoutEvent(
+    eventType,
+    session,
+    config,
+    updateSubscription,
+    authProvider
+  );
 }
-
-/**
- * Calculate subscription end date with proper edge case handling
- * Fixes issues like Jan 31 + 1 month = March 3 (should be Feb 28/29)
- */
-// Removed - now using calculateSubscriptionEndDate from @donotdev/core/server

@@ -9,6 +9,8 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { CallableRequest } from 'firebase-functions/v2/https';
+import type Stripe from 'stripe';
 import * as v from 'valibot';
 
 import type { StripeBackConfig } from '@donotdev/core/server';
@@ -24,9 +26,6 @@ import {
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';
-
-import type { CallableRequest } from 'firebase-functions/v2/https';
-import type Stripe from 'stripe';
 
 const changePlanSchema = v.object({
   userId: v.string(),

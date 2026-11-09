@@ -11,6 +11,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as v from 'valibot';
 
 import { hasRoleAccess } from '@donotdev/core/server';
@@ -21,9 +22,7 @@ import {
   checkRateLimitWithPostgres,
   DEFAULT_RATE_LIMITS,
 } from './utils/rateLimiter.js';
-
 import type { RateLimitConfig } from './utils/rateLimiter.js';
-import type { SupabaseClient } from '@supabase/supabase-js';
 
 // =============================================================================
 // Types

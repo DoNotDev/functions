@@ -14,6 +14,7 @@ import type { StripeBackConfig } from '@donotdev/core/server';
 import type { CreateCheckoutSessionRequest } from '@donotdev/core/server';
 
 import { createCheckoutAlgorithm } from '../../shared/billing/createCheckout.js';
+import type { StripeSessionProvider } from '../../shared/billing/createCheckout.js';
 import {
   initStripe,
   stripe,
@@ -45,48 +46,21 @@ export function createCheckoutSession(billingConfig: StripeBackConfig) {
 
       const authProvider = createSupabaseAuthProvider(ctx.supabaseAdmin);
 
-      const stripeProvider = {
-        async createCheckoutSession(params: {
-          priceId?: string;
-          unitAmount?: number;
-          productName?: string;
-          currency?: string;
-          customerEmail?: string;
-          metadata: Record<string, string>;
-          allowPromotionCodes: boolean;
-          successUrl: string;
-          cancelUrl: string;
-          mode?: 'payment' | 'subscription';
-        }) {
-          const session = await stripe.checkout.sessions.create({
-            mode: params.mode || 'payment',
-            line_items: [
-              params.priceId
-                ? { price: params.priceId, quantity: 1 }
-                : {
-                    price_data: {
-                      currency: params.currency || 'eur',
-                      unit_amount: params.unitAmount!,
-                      product_data: { name: params.productName! },
-                    },
-                    quantity: 1,
-                  },
-            ],
-            customer_email: params.customerEmail || undefined,
-            success_url: params.successUrl,
-            cancel_url: params.cancelUrl,
-            allow_promotion_codes: params.allowPromotionCodes,
-            metadata: params.metadata,
-            ...(params.mode === 'subscription' && {
-              subscription_data: { metadata: params.metadata },
-            }),
-          });
+      const stripeProvider: StripeSessionProvider = {
+        async createStripeSession(params) {
+          const session = await stripe.checkout.sessions.create(params);
           return { id: session.id, url: session.url };
+        },
+        async retrieveTaxRate(id) {
+          const rate = await stripe.taxRates.retrieve(id);
+          return { id: rate.id, inclusive: rate.inclusive };
         },
       };
 
+      // userId comes from the verified JWT, never from the client
       return createCheckoutAlgorithm(
         data,
+        ctx.uid,
         stripeProvider,
         authProvider,
         billingConfig

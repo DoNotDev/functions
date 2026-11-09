@@ -10,4 +10,3 @@
  */
 
 export { updateUserSubscription } from './updateUserSubscription.js';
-export type { SubscriptionData } from './updateUserSubscription.js';

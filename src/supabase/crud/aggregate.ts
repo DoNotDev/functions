@@ -89,7 +89,7 @@ export function createSupabaseAggregateEntities(
       const { supabaseAdmin } = ctx;
 
       const aggregateColumn = mapper.toBackendField(aggregate.field);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Dynamic aggregate builder; Supabase types change across chained calls
+
       let query: any = supabaseAdmin.from(collection);
 
       for (const [field, operator, value] of where) {

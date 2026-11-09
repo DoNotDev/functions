@@ -9,16 +9,14 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+import type Stripe from 'stripe';
 import * as v from 'valibot';
 
 import type { RefreshSubscriptionRequest } from '@donotdev/core/server';
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { stripe, validateStripeEnvironment } from '../../../shared/utils.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
-import type Stripe from 'stripe';
 
 const refreshSubscriptionStatusSchema = v.object({
   userId: v.pipe(v.string(), v.minLength(1, 'User ID is required')),
@@ -53,6 +51,7 @@ async function refreshSubscriptionStatusLogic(
   const userId = context.uid;
 
   // Get user from Firebase
+  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
   const user = await getFirebaseAdminAuth().getUser(userId);
   const currentClaims = user.customClaims || {};
 
@@ -94,8 +93,24 @@ async function refreshSubscriptionStatusLogic(
 }
 
 /**
- * Vercel API handler for refreshing subscription status
- * Base function handles all common concerns automatically
+ * Vercel API handler factory for refreshing the caller's subscription claims
+ * from Stripe. Firebase backend only (reads and writes Firebase Auth custom
+ * claims); `firebase-admin` is loaded on the first request.
+ * Base function handles validation, auth, rate limiting and monitoring.
+ *
+ * @param customSchema - Optional request body schema (default: `{ userId: string }`)
+ * @returns Next.js API route handler
+ *
+ * @example
+ * ```typescript
+ * import { refreshSubscriptionStatus } from '@donotdev/functions/vercel';
+ *
+ * export default refreshSubscriptionStatus();
+ * ```
+ *
+ * @version 0.1.0
+ * @since 0.0.1
+ * @author AMBROISE PARK Consulting
  */
 const refreshSubscriptionStatus = (
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>

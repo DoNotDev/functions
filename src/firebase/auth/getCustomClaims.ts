@@ -9,17 +9,16 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { createBaseFunction } from '../baseFunction.js';
 import { AUTH_CONFIG } from '../config/constants.js';
-
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 const getCustomClaimsSchema = v.object({});
 

@@ -9,16 +9,14 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { SUBSCRIPTION_STATUS } from '@donotdev/core/server';
+import type Stripe from 'stripe';
 
-import {
-  updateUserSubscription,
-  type AuthProvider,
-} from './updateUserSubscription.js';
+import { SUBSCRIPTION_STATUS } from '@donotdev/core/server';
+import type { BillingAuthProvider } from '@donotdev/core/server';
+
+import { updateUserSubscription } from './updateUserSubscription.js';
 import { handleError } from '../../errorHandling.js';
 import { stripe, validateStripeEnvironment } from '../../utils.js';
-
-import type Stripe from 'stripe';
 
 /**
  * Cancel user subscription at period end
@@ -29,7 +27,7 @@ import type Stripe from 'stripe';
  */
 export async function cancelUserSubscription(
   userId: string,
-  authProvider: AuthProvider
+  authProvider: BillingAuthProvider
 ): Promise<{ success: boolean; endsAt: string }> {
   validateStripeEnvironment();
 
@@ -101,7 +99,7 @@ export async function changeUserPlan(
   newPriceId: string,
   billingConfigKey: string,
   billingConfig: Record<string, any>,
-  authProvider: AuthProvider
+  authProvider: BillingAuthProvider
 ): Promise<{ success: boolean; newTier: string; newPrice: number }> {
   validateStripeEnvironment();
 
@@ -191,7 +189,7 @@ export async function changeUserPlan(
  */
 export async function createCustomerPortalSession(
   userId: string,
-  authProvider: AuthProvider,
+  authProvider: BillingAuthProvider,
   returnUrl?: string
 ): Promise<{ url: string }> {
   validateStripeEnvironment();

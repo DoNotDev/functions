@@ -9,7 +9,12 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { Query, DocumentData } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
@@ -23,12 +28,6 @@ import { createMetadata } from '../../shared/index.js';
 import { DoNotDevError, validateDocument } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
-
-import type { Query, DocumentData } from 'firebase-admin/firestore';
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 export type CreateEntityRequest = {
   payload: Record<string, any>;

@@ -9,8 +9,10 @@
  * @author AMBROISE PARK Consulting
  */
 
-export * from './create-checkout-session.js';
-export * from './refresh-subscription-status.js';
+export { createCheckoutSession } from './create-checkout-session.js';
+export { createStripeWebhook } from './webhook-handler.js';
+export type { VercelBillingOptions } from './backend.js';
+export { default as refreshSubscriptionStatus } from './refresh-subscription-status.js';
 
 // Vercel-specific implementations
 // Note: updateUserSubscription is now handled via shared helpers

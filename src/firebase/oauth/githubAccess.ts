@@ -11,6 +11,8 @@
 
 import { logger } from 'firebase-functions/v2';
 import { onCall } from 'firebase-functions/v2/https';
+import type { CallableRequest } from 'firebase-functions/v2/https';
+import type { CallableFunction } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import {
@@ -28,9 +30,6 @@ import { GitHubApiService } from '../../shared/index.js';
 import { assertAuthenticated } from '../../shared/utils.js';
 import { AUTH_CONFIG } from '../config/constants.js';
 import { githubPersonalAccessToken } from '../config/secrets.js';
-
-import type { CallableRequest } from 'firebase-functions/v2/https';
-import type { CallableFunction } from 'firebase-functions/v2/https';
 
 const OAUTH_CONFIG = {
   ...AUTH_CONFIG,

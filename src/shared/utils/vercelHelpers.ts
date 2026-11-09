@@ -9,13 +9,13 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+import type * as v from 'valibot';
+
 import {
   withVercelSchemaValidation,
   validateRequestData,
 } from './schemaValidation.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
-import type * as v from 'valibot';
 
 /**
  * Creates a Vercel API handler with schema validation

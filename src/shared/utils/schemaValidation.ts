@@ -9,10 +9,9 @@
  * @author AMBROISE PARK Consulting
  */
 
-import * as v from 'valibot';
-
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import * as v from 'valibot';
 
 /**
  * Validates request data using a schema with custom override support

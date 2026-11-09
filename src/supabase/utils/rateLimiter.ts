@@ -23,12 +23,12 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 import type {
   ServerRateLimitConfig as RateLimitConfig,
   ServerRateLimitResult as RateLimitResult,
 } from '@donotdev/core';
-
-import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type { RateLimitConfig, RateLimitResult };
 

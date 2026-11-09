@@ -2,46 +2,82 @@
 
 /**
  * @fileoverview Create Checkout Session Algorithm
- * @description Platform-agnostic algorithm for creating Stripe checkout sessions
+ * @description Platform-agnostic algorithm for creating Stripe checkout sessions.
+ * StripePayment/StripeSubscription items keep the 0.1.x behaviour (request or
+ * back-config priceId, 0.1.x dynamic pricing). StripeOrder items are priced on
+ * the server (`resolveLineItems`) and need a {@link StripeSessionProvider}.
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+
+import type Stripe from 'stripe';
 
 import type {
+  BeforeCheckoutOptions,
+  CheckoutSessionParams,
+  CheckoutSessionResult,
   CreateCheckoutSessionRequest,
+  CreateCheckoutSessionRequestInput,
   CreateCheckoutSessionResponse,
+  ResolvedOrder,
   StripeBackConfig,
+  StripeCheckoutProvider,
+  StripeOrderBackItem,
 } from '@donotdev/core/server';
 
+import { resolvePricePlan, toStripeSessionParams } from './checkoutPrice.js';
+import {
+  assertCheckoutSessionMetadata,
+  assertExclusiveTaxRates,
+  assertResolvedOrder,
+  assertStripeMetadata,
+  sanitizeMetadata,
+  validateCheckoutUrl,
+} from './checkoutValidation.js';
+import {
+  ORDER_ID_METADATA_KEY,
+  PRODUCT_ID_METADATA_KEY,
+} from './orderWebhook.js';
+
 /**
- * Provider interface for Stripe checkout operations
+ * Provider that sends full Stripe session params (every item type, StripeOrder included).
  *
- * @version 0.1.0
- * @since 0.0.1
+ * @example
+ * ```typescript
+ * const provider: StripeSessionProvider = {
+ *   async createStripeSession(params) {
+ *     const session = await stripe.checkout.sessions.create(params);
+ *     return { id: session.id, url: session.url };
+ *   },
+ *   async retrieveTaxRate(id) {
+ *     const rate = await stripe.taxRates.retrieve(id);
+ *     return { id: rate.id, inclusive: rate.inclusive };
+ *   },
+ * };
+ * ```
+ *
+ * @version 0.2.0
+ * @since 0.2.0
  * @author AMBROISE PARK Consulting
  */
-export interface StripeCheckoutProvider {
-  createCheckoutSession(params: {
-    priceId?: string;
-    /** Amount in cents (dynamic pricing mode) */
-    unitAmount?: number;
-    /** Product name for Stripe checkout (dynamic pricing mode) */
-    productName?: string;
-    /** Currency code, defaults to 'eur' */
-    currency?: string;
-    customerEmail?: string;
-    metadata: Record<string, string>;
-    allowPromotionCodes: boolean;
-    successUrl: string;
-    cancelUrl: string;
-    mode?: 'payment' | 'subscription';
-  }): Promise<{
-    id: string;
-    url: string | null;
-  }>;
+export interface StripeSessionProvider {
+  createStripeSession(
+    params: Stripe.Checkout.SessionCreateParams
+  ): Promise<CheckoutSessionResult>;
+  /** Used to reject inclusive Tax Rates on StripeOrder manual tax (cached per instance). */
+  retrieveTaxRate(taxRateId: string): Promise<{ id: string; inclusive: boolean }>;
 }
+
+/**
+ * Any provider accepted by {@link createCheckoutAlgorithm}.
+ *
+ * @version 0.2.0
+ * @since 0.2.0
+ * @author AMBROISE PARK Consulting
+ */
+export type CheckoutProvider = StripeCheckoutProvider | StripeSessionProvider;
 
 /**
  * Provider interface for authentication operations
@@ -56,223 +92,323 @@ export interface AuthCheckoutProvider {
   }>;
 }
 
-/**
- * Validate URL has http/https protocol.
- * Platform-agnostic (no firebase logger dependency).
- */
-function validateCheckoutUrl(url: string, name: string): void {
-  try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error(`Invalid protocol: ${parsed.protocol}`);
-    }
-  } catch (error) {
-    throw new Error(
-      `Invalid ${name} URL: ${url}. ${error instanceof Error ? error.message : 'Invalid URL format'}`
-    );
+function isSessionProvider(
+  provider: CheckoutProvider
+): provider is StripeSessionProvider {
+  return 'createStripeSession' in provider;
+}
+
+/** 0.1.x: empty redirect URLs default to FRONTEND_URL pages. */
+function resolveRedirectUrl(url: string, path: string): string {
+  if (url) return url;
+  const frontendUrl = process.env.FRONTEND_URL;
+  if (!frontendUrl) {
+    throw new Error(`Missing ${path} redirect URL and FRONTEND_URL is not set`);
   }
+  return `${frontendUrl}/billing/${path}`;
+}
+
+/** Common session params for StripeOrder. */
+interface BaseSessionParams {
+  successUrl: string;
+  cancelUrl: string;
+  customerEmail: string | undefined;
+  metadata: Record<string, string>;
 }
 
 /**
- * Sanitize metadata: enforce string values, strip script injection, cap lengths.
- * Platform-agnostic (no firebase logger dependency).
+ * Session params for a StripeOrder: server-priced lines (excl. VAT) and the
+ * item's B2B options.
  */
-function sanitizeMetadata(
-  metadata: Record<string, any>
-): Record<string, string> {
-  const sanitized: Record<string, string> = {};
+function buildOrderSessionParams(
+  item: StripeOrderBackItem,
+  order: ResolvedOrder,
+  base: BaseSessionParams
+): Stripe.Checkout.SessionCreateParams {
+  const options = order.session ?? {};
+  const taxRates =
+    item.tax.mode === 'manual'
+      ? (options.taxRateIds ?? item.tax.taxRateIds)
+      : undefined;
+  const metadata = { ...base.metadata, [ORDER_ID_METADATA_KEY]: order.orderId };
 
-  for (const [key, value] of Object.entries(metadata)) {
-    if (typeof value !== 'string') {
-      throw new Error(
-        `Metadata value for key '${key}' must be a string, got ${typeof value}`
-      );
-    }
-
-    const sanitizedValue = value
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/javascript:/gi, '')
-      .replace(/on\w+\s*=/gi, '');
-
-    if (sanitizedValue.length > 1000) {
-      throw new Error(
-        `Metadata value for key '${key}' is too long (max 1000 characters)`
-      );
-    }
-
-    if (key.length > 100) {
-      throw new Error(`Metadata key '${key}' is too long (max 100 characters)`);
-    }
-
-    sanitized[key] = sanitizedValue;
-  }
-
-  return sanitized;
+  return {
+    mode: 'payment',
+    client_reference_id: order.orderId,
+    line_items: order.lineItems.map((line) => ({
+      price_data: {
+        currency: item.currency,
+        unit_amount: line.unitAmount,
+        tax_behavior: 'exclusive',
+        product_data: {
+          name: line.name,
+          ...(line.description && { description: line.description }),
+          metadata: { [PRODUCT_ID_METADATA_KEY]: line.productId },
+        },
+      },
+      quantity: line.quantity,
+      ...(taxRates && taxRates.length > 0 && { tax_rates: taxRates }),
+    })),
+    automatic_tax: { enabled: item.tax.mode === 'automatic' },
+    tax_id_collection:
+      item.taxIdCollection === 'disabled'
+        ? { enabled: false }
+        : {
+            enabled: true,
+            required:
+              item.taxIdCollection === 'required' ? 'if_supported' : 'never',
+          },
+    billing_address_collection: item.billingAddressCollection,
+    ...(item.shipping && {
+      shipping_address_collection: {
+        // Config validated as uppercase ISO 3166-1 alpha-2; stripe@20 types the param as a closed enum
+        allowed_countries: item.shipping
+          .allowedCountries as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[],
+      },
+      ...(item.shipping.shippingRateIds && {
+        shipping_options: item.shipping.shippingRateIds.map((id) => ({
+          shipping_rate: id,
+        })),
+      }),
+    }),
+    customer_creation: item.customerCreation,
+    invoice_creation: {
+      enabled: item.invoiceCreation,
+      ...(item.invoiceCreation && {
+        invoice_data: {
+          metadata,
+          ...(options.invoiceFooter && { footer: options.invoiceFooter }),
+        },
+      }),
+    },
+    // Per-order methods replace the configuration (Stripe accepts one or the other)
+    ...(options.paymentMethodTypes
+      ? { payment_method_types: options.paymentMethodTypes }
+      : item.paymentMethodConfiguration && {
+          payment_method_configuration: item.paymentMethodConfiguration,
+        }),
+    ...(options.expiresAt !== undefined && { expires_at: options.expiresAt }),
+    // Orders: merchant policy from the back config only
+    allow_promotion_codes: item.allowPromotionCodes === true,
+    success_url: base.successUrl,
+    cancel_url: base.cancelUrl,
+    customer_email: base.customerEmail,
+    metadata,
+    payment_intent_data: { metadata },
+  };
 }
+
+type CheckoutArgs =
+  | [CheckoutProvider, AuthCheckoutProvider, StripeBackConfig]
+  | [string, CheckoutProvider, AuthCheckoutProvider, StripeBackConfig];
 
 /**
  * Create checkout session algorithm
+ *
+ * 1. Resolve the billing config item and verify the user
+ * 2. Single-price items: 0.1.x pricing (request/back-config priceId, dynamic pricing)
+ * 3. `beforeCheckout` hook (block/allow; 0.1.x dynamic-pricing overrides)
+ * 4. StripeOrder: reject inclusive manual Tax Rates, `resolveLineItems` prices every line
+ *    and may set per-order session options (`ResolvedOrder.session`: tax rates,
+ *    payment methods, expiry, invoice footer)
+ * 5. Validate metadata against Stripe limits, create the session through the provider
+ *
+ * Server-owned metadata (`userId`, `billingConfigKey`, `orderId`) is written after
+ * the client metadata and cannot be overwritten by it.
+ *
+ * Two call shapes:
+ * - `(request, userId, stripeProvider, authProvider, billingConfig)`: userId from
+ *   the provider's auth context (framework providers use this).
+ * - 0.1.x `(request, stripeProvider, authProvider, billingConfig)`: userId read from
+ *   `request.userId` (the caller must set it from its auth context).
+ *
+ * @example
+ * ```typescript
+ * const result = await createCheckoutAlgorithm(
+ *   request,
+ *   context.uid,
+ *   stripeSessionProvider,
+ *   authProvider,
+ *   billingConfig
+ * );
+ * ```
+ *
+ * @param request - Validated client request (0.1.x shape accepted)
+ * @param userId - Authenticated user ID (omit in the 0.1.x call shape)
+ * @param stripeProvider - {@link StripeSessionProvider}, or 0.1.x {@link StripeCheckoutProvider} (single-price items only)
+ * @param authProvider - Verifies the user exists
+ * @param billingConfig - App back config
  *
  * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
 export async function createCheckoutAlgorithm(
-  request: CreateCheckoutSessionRequest,
-  stripeProvider: StripeCheckoutProvider,
+  request: CreateCheckoutSessionRequestInput,
+  userId: string,
+  stripeProvider: CheckoutProvider,
   authProvider: AuthCheckoutProvider,
   billingConfig: StripeBackConfig
+): Promise<CreateCheckoutSessionResponse>;
+export async function createCheckoutAlgorithm(
+  request: CreateCheckoutSessionRequestInput,
+  stripeProvider: CheckoutProvider,
+  authProvider: AuthCheckoutProvider,
+  billingConfig: StripeBackConfig
+): Promise<CreateCheckoutSessionResponse>;
+export async function createCheckoutAlgorithm(
+  input: CreateCheckoutSessionRequestInput,
+  ...args: CheckoutArgs
 ): Promise<CreateCheckoutSessionResponse> {
-  if (!process.env.FRONTEND_URL) {
-    throw new Error('FRONTEND_URL environment variable is required');
-  }
-
-  const {
-    priceId,
-    unitAmount,
-    productName,
-    currency,
-    userId,
-    customerEmail,
-    metadata = {},
-    allowPromotionCodes = true,
-    successUrl,
-    cancelUrl,
-    mode = 'payment',
-  } = request;
-
-  // ✅ VALIDATE: billingConfigKey exists
-  const configKey = metadata.billingConfigKey;
-  if (!configKey) {
-    throw new Error('Missing billingConfigKey in metadata');
-  }
-
-  // ✅ VALIDATE: config key is valid
-  const billingItem = billingConfig[configKey];
-  if (!billingItem) {
-    throw new Error(`Invalid billing config key: ${configKey}`);
-  }
-
-  // ✅ VALIDATE: either priceId or (unitAmount + productName)
-  const useDynamicPricing = !priceId && unitAmount && productName;
-  if (!priceId && !useDynamicPricing) {
-    throw new Error('Either priceId or (unitAmount + productName) is required');
-  }
-
-  // ✅ VALIDATE: price_data not supported for subscriptions
-  if (useDynamicPricing && mode === 'subscription') {
+  const legacyCall = args.length === 3;
+  const [userId, stripeProvider, authProvider, billingConfig] =
+    args.length === 3 ? [input.userId, ...args] : args;
+  if (!userId) {
     throw new Error(
-      'Dynamic pricing (unitAmount) is not supported for subscriptions. Use a Stripe priceId.'
+      legacyCall ? 'Missing userId in request' : 'Missing authenticated userId'
     );
   }
 
-  if (priceId) {
-    // Fixed pricing: validate priceId matches config (if config has one)
-    if (billingItem.priceId && billingItem.priceId !== priceId) {
-      throw new Error('Price ID mismatch with configuration');
-    }
-  } else {
-    // Dynamic pricing: maxUnitAmount is required as a security cap
-    if (!billingItem.maxUnitAmount) {
-      throw new Error(
-        'Dynamic pricing requires maxUnitAmount in billing config for security'
-      );
-    }
-    if (unitAmount! > billingItem.maxUnitAmount) {
-      throw new Error(
-        `Unit amount ${unitAmount} exceeds maximum allowed: ${billingItem.maxUnitAmount}`
-      );
-    }
-    if (unitAmount! < 100) {
-      throw new Error('Unit amount must be at least 100 cents (1.00)');
-    }
+  const billingConfigKey =
+    input.billingConfigKey || input.metadata?.billingConfigKey;
+  if (!billingConfigKey) {
+    throw new Error('Missing billingConfigKey (request or metadata)');
+  }
+  const request: CreateCheckoutSessionRequest = {
+    ...input,
+    billingConfigKey,
+    lineItems: input.lineItems ?? [{ productId: billingConfigKey, quantity: 1 }],
+  };
+
+  const billingItem = billingConfig[billingConfigKey];
+  if (!billingItem) {
+    throw new Error(`Invalid billing config key: ${billingConfigKey}`);
   }
 
-  // ✅ VALIDATE: userId exists
-  if (!userId) {
-    throw new Error('Missing userId in request');
-  }
+  const isOrder = billingItem.type === 'StripeOrder';
+  const plan = isOrder ? undefined : resolvePricePlan(billingItem, request);
 
   // Verify user exists
   await authProvider.getUser(userId);
 
-  // ✅ HOOK: beforeCheckout (ownership check, status validation, server-resolved pricing)
-  let finalUnitAmount = unitAmount;
-  let finalProductName = productName;
+  const clientMetadata = sanitizeMetadata(request.metadata ?? {});
+  // Server values AFTER spread — cannot be overwritten by client
+  const metadata = { ...clientMetadata, userId, billingConfigKey };
+  // Fail before any hook side effect (StripeOrder creates a pending order)
+  assertStripeMetadata(
+    isOrder ? { ...metadata, [ORDER_ID_METADATA_KEY]: '' } : metadata,
+    'metadata'
+  );
+
+  const allowPromotionCodes = request.allowPromotionCodes ?? true;
+  let unitAmount = request.unitAmount;
+  let productName = request.productName;
 
   if (billingItem.beforeCheckout) {
+    const options: BeforeCheckoutOptions = {
+      ...request,
+      userId,
+      mode: plan?.mode ?? 'payment',
+      priceId: plan?.priceId,
+      metadata: request.metadata ?? {},
+      allowPromotionCodes,
+    };
     const hookResult = await billingItem.beforeCheckout(
       userId,
-      {
-        priceId,
-        unitAmount,
-        productName,
-        currency,
-        mode,
-        metadata,
-        allowPromotionCodes,
-      },
-      sanitizeMetadata(metadata)
+      options,
+      clientMetadata
     );
-
     if (!hookResult.allowed) {
       throw new Error(
         hookResult.reason || 'Checkout blocked by beforeCheckout hook'
       );
     }
-
-    if (hookResult.overrides) {
-      if (hookResult.overrides.unitAmount !== undefined) {
-        finalUnitAmount = hookResult.overrides.unitAmount;
-      }
-      if (hookResult.overrides.productName !== undefined) {
-        finalProductName = hookResult.overrides.productName;
-      }
+    // 0.1.x: overrides apply to dynamic pricing only
+    if (plan?.dynamic && hookResult.overrides) {
+      unitAmount = hookResult.overrides.unitAmount ?? unitAmount;
+      productName = hookResult.overrides.productName ?? productName;
     }
   }
 
-  const finalUseDynamicPricing =
-    !priceId && finalUnitAmount && finalProductName;
+  const successUrl = resolveRedirectUrl(request.successUrl, 'success');
+  const cancelUrl = resolveRedirectUrl(request.cancelUrl, 'cancel');
+  validateCheckoutUrl(successUrl, 'success');
+  validateCheckoutUrl(cancelUrl, 'cancel');
 
-  // ✅ VALIDATE: overridden amount still respects security cap
-  if (
-    finalUseDynamicPricing &&
-    billingItem.maxUnitAmount &&
-    finalUnitAmount! > billingItem.maxUnitAmount
-  ) {
-    throw new Error(
-      `Hook-overridden unit amount ${finalUnitAmount} exceeds maximum allowed: ${billingItem.maxUnitAmount}`
-    );
-  }
-
-  // ✅ VALIDATE: URLs are valid http/https
-  const resolvedSuccessUrl =
-    successUrl || `${process.env.FRONTEND_URL}/billing/success`;
-  const resolvedCancelUrl =
-    cancelUrl || `${process.env.FRONTEND_URL}/billing/cancel`;
-  validateCheckoutUrl(resolvedSuccessUrl, 'success');
-  validateCheckoutUrl(resolvedCancelUrl, 'cancel');
-
-  // ✅ SANITIZE: metadata values (strip scripts, cap lengths)
-  const sanitizedMetadata = sanitizeMetadata(metadata);
-
-  // Create checkout session
-  const session = await stripeProvider.createCheckoutSession({
-    priceId,
-    unitAmount: finalUseDynamicPricing ? finalUnitAmount : undefined,
-    productName: finalUseDynamicPricing ? finalProductName : undefined,
-    currency: currency || billingItem.currency || 'eur',
-    customerEmail,
-    metadata: {
-      ...sanitizedMetadata,
+  let session: CheckoutSessionResult;
+  if (billingItem.type === 'StripeOrder') {
+    if (!isSessionProvider(stripeProvider)) {
+      throw new Error(
+        `'${billingConfigKey}' is a StripeOrder: the checkout provider must implement createStripeSession (StripeSessionProvider)`
+      );
+    }
+    if (billingItem.tax.mode === 'manual') {
+      await assertExclusiveTaxRates(
+        (id) => stripeProvider.retrieveTaxRate(id),
+        billingItem.tax.taxRateIds,
+        billingConfigKey
+      );
+    }
+    const order = await billingItem.resolveLineItems(request.lineItems, {
       userId,
-      billingConfigKey: configKey as string, // ✅ Server values AFTER spread — cannot be overwritten by client
-    },
-    allowPromotionCodes,
-    successUrl: resolvedSuccessUrl,
-    cancelUrl: resolvedCancelUrl,
-    mode,
-  });
+      billingConfigKey,
+      metadata: clientMetadata,
+    });
+    assertResolvedOrder(order, billingConfigKey);
+    const sessionOptions = order.session;
+    if (sessionOptions?.taxRateIds) {
+      if (billingItem.tax.mode !== 'manual') {
+        throw new Error(
+          `resolveLineItems for '${billingConfigKey}': session.taxRateIds needs tax.mode 'manual'`
+        );
+      }
+      await assertExclusiveTaxRates(
+        (id) => stripeProvider.retrieveTaxRate(id),
+        sessionOptions.taxRateIds,
+        billingConfigKey
+      );
+    }
+    if (sessionOptions?.invoiceFooter && !billingItem.invoiceCreation) {
+      throw new Error(
+        `resolveLineItems for '${billingConfigKey}': session.invoiceFooter needs invoiceCreation`
+      );
+    }
+    const params = buildOrderSessionParams(billingItem, order, {
+      successUrl,
+      cancelUrl,
+      customerEmail: request.customerEmail,
+      metadata,
+    });
+    assertCheckoutSessionMetadata(params);
+    session = await stripeProvider.createStripeSession(params);
+  } else {
+    const dynamic = !!plan?.dynamic && !!unitAmount && !!productName;
+    // 0.1.x: an overridden amount still respects the security cap
+    if (dynamic && billingItem.maxUnitAmount && unitAmount! > billingItem.maxUnitAmount) {
+      throw new Error(
+        `Hook-overridden unit amount ${unitAmount} exceeds maximum allowed: ${billingItem.maxUnitAmount}`
+      );
+    }
+    const params: CheckoutSessionParams = {
+      priceId: plan?.priceId,
+      unitAmount: dynamic ? unitAmount : undefined,
+      productName: dynamic ? productName : undefined,
+      currency: request.currency || billingItem.currency || 'eur',
+      customerEmail: request.customerEmail,
+      metadata,
+      allowPromotionCodes,
+      successUrl,
+      cancelUrl,
+      mode: plan?.mode,
+    };
+    if (isSessionProvider(stripeProvider)) {
+      const stripeParams = toStripeSessionParams(params);
+      assertCheckoutSessionMetadata(stripeParams);
+      session = await stripeProvider.createStripeSession(stripeParams);
+    } else {
+      session = await stripeProvider.createCheckoutSession(params);
+    }
+  }
 
   return {
     sessionId: session.id,

@@ -9,15 +9,12 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
 import * as v from 'valibot';
-
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { handleError } from '../../../shared/errorHandling.js';
 import { stripe, validateStripeEnvironment } from '../../../shared/utils.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 const customerPortalSchema = v.object({
   userId: v.string(),
@@ -38,6 +35,7 @@ async function createCustomerPortalLogic(
   const { returnUrl } = data;
 
   // Get customer ID
+  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
   const user = await getFirebaseAdminAuth().getUser(userId);
   const customerId = user.customClaims?.subscription?.customerId;
 

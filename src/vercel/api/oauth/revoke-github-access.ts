@@ -9,19 +9,17 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
 import * as v from 'valibot';
 
 import {
   revokeGitHubAccessSchema,
   type RevokeGitHubAccessRequest,
 } from '@donotdev/core/server';
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { handleError } from '../../../shared/errorHandling.js';
-import { GitHubApiService } from '../../../shared/index.js';
+import { GitHubApiService } from '../../../shared/github.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
   req: NextApiRequest,
@@ -86,6 +84,7 @@ export default async function handler(
     }
 
     // Remove from user's custom claims
+    const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
     const user = await getFirebaseAdminAuth().getUser(userId);
     const customClaims = user.customClaims || {};
 

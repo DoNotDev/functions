@@ -1,17 +1,20 @@
 // packages/functions/src/shared/ai/createAIRoute.ts
 
 /**
- * @fileoverview AI Route Handler (Vercel AI SDK)
+ * @fileoverview AI Route Handler (Vercel AI SDK 7)
  * @description Platform-agnostic handler for AI chat requests using Vercel AI SDK.
  * Handles auth (via platform wrapper), rate limiting (Upstash), streaming, and cost tracking.
+ * Streaming responses use the UI message stream protocol read by `@ai-sdk/react`
+ * `useChat`; token usage travels as message metadata (`metadata.usage`, AIUsage).
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.1.0
  * @author AMBROISE PARK Consulting
  */
 
-import { streamText, generateText, tool, jsonSchema } from 'ai';
-import type { LanguageModel, CoreTool } from 'ai';
+// `ai` is loaded on first request (handleAIRequest): importing this module must not
+// require the AI SDK, so server entries that re-export it run without it installed.
+import type { JSONSchema7, LanguageModel, LanguageModelUsage, Tool } from 'ai';
 
 import type {
   AIChatRequest,
@@ -62,8 +65,8 @@ async function resolveModel(
       return (apiKey: string) => createOpenAI({ apiKey })(model);
     },
     google: async () => {
-      const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
-      return (apiKey: string) => createGoogleGenerativeAI({ apiKey })(model);
+      const { createGoogle } = await import('@ai-sdk/google');
+      return (apiKey: string) => createGoogle({ apiKey })(model);
     },
   };
 
@@ -156,20 +159,32 @@ async function getRateLimiter() {
  * Merges request-level tools with config-level tools (request takes precedence).
  */
 function resolveTools(
+  sdk: Pick<typeof import('ai'), 'tool' | 'jsonSchema'>,
   requestTools?: Record<string, AIToolDefinition>,
   configTools?: Record<string, AIToolDefinition>
-): Record<string, CoreTool> | undefined {
+): Record<string, Tool> | undefined {
   const merged = { ...configTools, ...requestTools };
   if (Object.keys(merged).length === 0) return undefined;
 
-  const sdkTools: Record<string, CoreTool> = {};
+  const sdkTools: Record<string, Tool> = {};
   for (const [name, def] of Object.entries(merged)) {
-    sdkTools[name] = tool({
+    sdkTools[name] = sdk.tool({
       description: def.description,
-      parameters: jsonSchema(def.parameters),
+      inputSchema: sdk.jsonSchema(def.parameters as JSONSchema7),
     });
   }
   return sdkTools;
+}
+
+/** AI SDK usage (input/output tokens) → framework usage (prompt/completion tokens). */
+function toAIUsage(usage: LanguageModelUsage): AIUsage {
+  const promptTokens = usage.inputTokens ?? 0;
+  const completionTokens = usage.outputTokens ?? 0;
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: usage.totalTokens ?? promptTokens + completionTokens,
+  };
 }
 
 // =============================================================================
@@ -265,7 +280,14 @@ export async function handleAIRequest(
   const requestId = options.requestId || crypto.randomUUID();
 
   // Resolve tools (request-level overrides config-level)
-  const tools = resolveTools(request.tools, config.tools);
+  const sdk = await import('ai');
+  const {
+    streamText,
+    generateText,
+    toUIMessageStream,
+    createUIMessageStreamResponse,
+  } = sdk;
+  const tools = resolveTools(sdk, request.tools, config.tools);
 
   // Cost tracking helper
   const recordCost = async (usage: AIUsage) => {
@@ -298,47 +320,48 @@ export async function handleAIRequest(
     const result = streamText({
       model: languageModel,
       messages,
-      system: systemPrompt,
-      maxTokens,
+      instructions: systemPrompt,
+      maxOutputTokens: maxTokens,
       temperature,
       tools,
-      onFinish: async ({ usage }: { usage: any }) => {
-        await recordCost({
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          totalTokens: usage.promptTokens + usage.completionTokens,
-        });
+      onEnd: async ({ usage }) => {
+        await recordCost(toAIUsage(usage));
       },
     });
 
-    return result.toDataStreamResponse();
+    return createUIMessageStreamResponse({
+      stream: toUIMessageStream({
+        stream: result.stream,
+        // Usage for the client's cost display (useAIChat reads metadata.usage).
+        messageMetadata: ({ part }) =>
+          part.type === 'finish'
+            ? { usage: toAIUsage(part.totalUsage) }
+            : undefined,
+      }),
+    });
   }
 
   // Non-streaming
   const result = await generateText({
     model: languageModel,
     messages,
-    system: systemPrompt,
-    maxTokens,
+    instructions: systemPrompt,
+    maxOutputTokens: maxTokens,
     temperature,
     tools,
   });
 
-  const usage: AIUsage = {
-    promptTokens: result.usage.promptTokens,
-    completionTokens: result.usage.completionTokens,
-    totalTokens: result.usage.promptTokens + result.usage.completionTokens,
-  };
+  const usage = toAIUsage(result.usage);
 
   await recordCost(usage);
 
   // Extract tool calls from result
   const toolCalls =
-    result.toolCalls?.map((tc: any) => ({
+    result.toolCalls.map((tc) => ({
       id: tc.toolCallId,
       name: tc.toolName,
-      args: tc.args,
-    })) ?? [];
+      args: tc.input as Record<string, unknown>,
+    }));
 
   return new Response(
     JSON.stringify({

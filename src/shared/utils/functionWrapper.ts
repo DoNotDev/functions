@@ -9,10 +9,9 @@
  * @author AMBROISE PARK Consulting
  */
 
-import * as v from 'valibot';
-
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import * as v from 'valibot';
 
 /**
  * Simple wrapper that validates data against schema and calls the handler

@@ -11,6 +11,10 @@
 
 import { logger } from 'firebase-functions/v2';
 import { onCall } from 'firebase-functions/v2/https';
+import type {
+  CallableRequest,
+  CallableOptions,
+} from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import type { SecurityContext } from '@donotdev/core';
@@ -20,11 +24,6 @@ import type { UserRole } from '@donotdev/core/server';
 import { FUNCTION_CONFIG } from './config/constants.js';
 import { handleError, DoNotDevError } from '../shared/errorHandling.js';
 import { assertAuthenticated, getUserRole } from '../shared/utils.js';
-
-import type {
-  CallableRequest,
-  CallableOptions,
-} from 'firebase-functions/v2/https';
 
 // Optional monitoring imports - only used when enabled
 // Lazy loaded to avoid unnecessary Firestore operations

@@ -9,17 +9,16 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+
 import { HIDDEN_STATUSES } from '@donotdev/core/server';
 import type { ListEntityData } from '@donotdev/core/server';
-import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
 import { handleError } from '../../../shared/errorHandling.js';
-import { transformFirestoreData } from '../../../shared/index.js';
-import { filterVisibleFields } from '../../../shared/index.js';
+import { transformFirestoreData } from '../../../shared/firebase.js';
+import { filterVisibleFields } from '../../../shared/schema.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import { validateCollectionName } from '../../../shared/utils.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
   req: NextApiRequest,
@@ -50,6 +49,8 @@ export default async function handler(
     validateCollectionName(schema.metadata.collection);
 
     // Get documents from Firestore
+    const { getFirebaseAdminFirestore } =
+      await import('@donotdev/firebase/server');
     const db = getFirebaseAdminFirestore();
     let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> =
       db.collection(schema.metadata.collection);

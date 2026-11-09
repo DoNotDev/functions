@@ -17,7 +17,7 @@
  * @author AMBROISE PARK Consulting
  */
 
-import * as v from 'valibot';
+import type * as v from 'valibot';
 
 import {
   BulkCollisionError,
@@ -32,11 +32,8 @@ import type {
 } from '@donotdev/core/server';
 import { defaultFieldMapper } from '@donotdev/supabase/server';
 
-import {
-  createMetadata,
-  executeBulk,
-  updateMetadata,
-} from '../../shared/index.js';
+import { executeBulk } from '../../shared/crud/bulkCore.js';
+import { createMetadata, updateMetadata } from '../../shared/metadata.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 
 // =============================================================================
@@ -78,7 +75,6 @@ function preparePatch(
   patch: Record<string, unknown>,
   uid: string
 ): Record<string, unknown> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const {
     createdAt,
     updatedAt,

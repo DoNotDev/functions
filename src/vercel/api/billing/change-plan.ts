@@ -9,18 +9,16 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+import type Stripe from 'stripe';
 import * as v from 'valibot';
 
 import type { StripeBackConfig } from '@donotdev/core/server';
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { updateUserSubscription } from '../../../shared/billing/helpers/updateUserSubscription.js';
 import { handleError } from '../../../shared/errorHandling.js';
 import { stripe, validateStripeEnvironment } from '../../../shared/utils.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
-import type Stripe from 'stripe';
 
 const changePlanSchema = v.object({
   userId: v.string(),
@@ -60,6 +58,7 @@ async function changePlanLogic(
   }
 
   // Get current subscription
+  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
   const user = await getFirebaseAdminAuth().getUser(userId);
   const subscriptionId = user.customClaims?.subscription?.subscriptionId;
 

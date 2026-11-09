@@ -9,14 +9,13 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+
 import type { GetEntityData } from '@donotdev/core/server';
-import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
 import { handleError } from '../../../shared/errorHandling.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import { validateCollectionName } from '../../../shared/utils.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
   req: NextApiRequest,
@@ -40,6 +39,8 @@ export default async function handler(
     validateCollectionName(schema.metadata.collection);
 
     // Check if document exists
+    const { getFirebaseAdminFirestore } =
+      await import('@donotdev/firebase/server');
     const db = getFirebaseAdminFirestore();
     const doc = await db.collection(schema.metadata.collection).doc(id).get();
 

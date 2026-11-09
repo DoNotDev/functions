@@ -9,6 +9,7 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type Stripe from 'stripe';
 import * as v from 'valibot';
 
 import {
@@ -18,8 +19,6 @@ import {
 } from '../../shared/utils.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { createSupabaseAuthProvider } from '../helpers/authProvider.js';
-
-import type Stripe from 'stripe';
 
 // =============================================================================
 // Schema

@@ -10,6 +10,10 @@
  */
 
 import { logger } from 'firebase-functions/v2';
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import type { UserRole } from '@donotdev/core/server';
@@ -18,11 +22,6 @@ import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 import { DoNotDevError, findReferences } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
-
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 export type DeleteEntityRequest = { id: string };
 

@@ -10,6 +10,7 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import { hasRoleAccess } from '@donotdev/core/server';
@@ -20,8 +21,6 @@ import { isFieldVisible } from '../../shared/schema.js';
 import { DoNotDevError } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
-
-import type { CallableRequest } from 'firebase-functions/v2/https';
 
 /** Supported aggregation operations */
 export type AggregateOperation = 'count' | 'sum' | 'avg' | 'min' | 'max';

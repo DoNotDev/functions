@@ -9,24 +9,31 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
 import * as v from 'valibot';
 
 import type { SecurityContext } from '@donotdev/core';
 
+import { getSupabaseAdmin } from './supabaseAdmin.js';
 import { handleError, DoNotDevError } from '../shared/errorHandling.js';
-import { verifyAuthToken } from '../shared/utils/internal/auth.js';
+import {
+  parseAuthBackend,
+  verifyAuthToken,
+} from '../shared/utils/internal/auth.js';
+import type { AuthProvider } from '../shared/utils/internal/auth.js';
 import { recordPaymentMetrics } from '../shared/utils/internal/monitoring.js';
 import {
   checkRateLimitWithFirestore,
   DEFAULT_RATE_LIMITS,
 } from '../shared/utils/internal/rateLimiter.js';
-
-import type { AuthProvider } from '../shared/utils/internal/auth.js';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { checkRateLimitWithPostgres } from '../supabase/utils/rateLimiter.js';
 
 /**
  * Base Vercel function that handles all common concerns
  * Users just provide their business logic
+ *
+ * @throws DoNotDevError (`invalid-argument`) at construction when `provider` is
+ * neither `'firebase'` nor `'supabase'`
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -48,6 +55,9 @@ export function createVercelBaseFunction<TRequest, TResponse>(
   /** Auth provider for token verification. Auto-detects via provider registry if omitted. */
   provider?: AuthProvider
 ) {
+  // Fail at route construction: an unknown backend must never run as Firebase
+  if (provider !== undefined) parseAuthBackend(provider);
+
   return async (
     req: NextApiRequest,
     res: NextApiResponse
@@ -77,10 +87,15 @@ export function createVercelBaseFunction<TRequest, TResponse>(
       const rateLimitKey = `${operation}_${uid}`;
       const rateLimitConfig =
         (DEFAULT_RATE_LIMITS as any)[operation] || DEFAULT_RATE_LIMITS.api;
-      const rateLimitResult = await checkRateLimitWithFirestore(
-        rateLimitKey,
-        rateLimitConfig
-      );
+      // Rate-limit storage follows the auth backend (Postgres for Supabase)
+      const rateLimitResult =
+        provider === 'supabase'
+          ? await checkRateLimitWithPostgres(
+              await getSupabaseAdmin(),
+              rateLimitKey,
+              rateLimitConfig
+            )
+          : await checkRateLimitWithFirestore(rateLimitKey, rateLimitConfig);
 
       if (!rateLimitResult.allowed) {
         security?.audit({

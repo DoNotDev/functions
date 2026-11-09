@@ -1,18 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock firebase-functions/v2 logger
-vi.mock('firebase-functions/v2', () => ({
+// Mock the framework logger (in-memory path logs on block/reset)
+vi.mock('../logger.js', () => ({
   logger: {
     warn: vi.fn(),
     info: vi.fn(),
     error: vi.fn(),
-    log: vi.fn(),
   },
-}));
-
-// Mock @donotdev/firebase/server (not used in in-memory path, but imported)
-vi.mock('@donotdev/firebase/server', () => ({
-  getFirebaseAdminFirestore: vi.fn(),
 }));
 
 import {

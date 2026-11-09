@@ -38,26 +38,28 @@ vi.mock('../../shared/utils.js', () => ({
 // `executeBulk` is the real orchestrator so end-to-end behaviour (collision
 // detection, empty short-circuit, transact invocation) exercises the shared
 // core.
-vi.mock('../../shared/index.js', async () => {
-  const actual = await vi.importActual<typeof import('../../shared/index.js')>(
-    '../../shared/index.js'
-  );
+vi.mock('../../shared/firebase.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../shared/firebase.js')
+  >('../../shared/firebase.js');
   return {
     ...actual,
     prepareForFirestore: (obj: Record<string, unknown>) => ({ ...obj }),
     transformFirestoreData: (obj: Record<string, unknown>) => ({ ...obj }),
-    createMetadata: (uid: string) => ({
-      createdAt: 'now',
-      updatedAt: 'now',
-      createdById: uid,
-      updatedById: uid,
-    }),
-    updateMetadata: (uid: string) => ({
-      updatedAt: 'now',
-      updatedById: uid,
-    }),
   };
 });
+vi.mock('../../shared/metadata.js', () => ({
+  createMetadata: (uid: string) => ({
+    createdAt: 'now',
+    updatedAt: 'now',
+    createdById: uid,
+    updatedById: uid,
+  }),
+  updateMetadata: (uid: string) => ({
+    updatedAt: 'now',
+    updatedById: uid,
+  }),
+}));
 
 // ---------------------------------------------------------------------------
 // Firebase Admin SDK — shared spy surface so each test can assert calls.
@@ -70,7 +72,7 @@ type TxSpy = {
   delete: ReturnType<typeof vi.fn>;
 };
 
-let txSpy: TxSpy;
+let txSpy: TxSpy | undefined;
 let existingDocIds: Set<string>;
 let mintedIds: string[];
 let mintedIdx: number;
@@ -170,6 +172,7 @@ function makeReq(opts: {
 }
 
 beforeEach(() => {
+  txSpy = undefined;
   existingDocIds = new Set();
   mintedIds = [];
   mintedIdx = 0;
@@ -203,9 +206,9 @@ describe('vercel bulk handler — happy path', () => {
       deletedIds: ['d1'],
     });
     // One transaction, N writes inside it.
-    expect(txSpy.set).toHaveBeenCalledTimes(2);
-    expect(txSpy.update).toHaveBeenCalledTimes(1);
-    expect(txSpy.delete).toHaveBeenCalledTimes(1);
+    expect(txSpy!.set).toHaveBeenCalledTimes(2);
+    expect(txSpy!.update).toHaveBeenCalledTimes(1);
+    expect(txSpy!.delete).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -263,9 +266,9 @@ describe('vercel bulk handler — validation failure', () => {
 
     expect(res._status).toBe(500);
     // No writes issued — existence check runs before any tx.set/update/delete.
-    expect(txSpy.set).not.toHaveBeenCalled();
-    expect(txSpy.update).not.toHaveBeenCalled();
-    expect(txSpy.delete).not.toHaveBeenCalled();
+    expect(txSpy!.set).not.toHaveBeenCalled();
+    expect(txSpy!.update).not.toHaveBeenCalled();
+    expect(txSpy!.delete).not.toHaveBeenCalled();
   });
 
   it('rejects structurally invalid body (ACL-equivalent schema check)', async () => {

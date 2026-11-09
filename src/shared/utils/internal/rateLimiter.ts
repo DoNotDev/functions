@@ -9,13 +9,12 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { logger } from 'firebase-functions/v2';
-
 import type {
   ServerRateLimitConfig as RateLimitConfig,
   ServerRateLimitResult as RateLimitResult,
 } from '@donotdev/core';
-import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
+
+import { logger } from '../../logger.js';
 
 export type { RateLimitConfig, RateLimitResult };
 
@@ -23,6 +22,16 @@ interface RateLimitEntry {
   attempts: number;
   windowStart: number;
   blockUntil: number | null;
+}
+
+/**
+ * Firestore, loaded on first use. `firebase-admin` is an optional peer:
+ * Supabase deployments never load it.
+ */
+async function getFirestore() {
+  const { getFirebaseAdminFirestore } =
+    await import('@donotdev/firebase/server');
+  return getFirebaseAdminFirestore();
 }
 
 // In-memory storage for rate limiting (in production, use Redis or Firestore)
@@ -121,7 +130,7 @@ export async function checkRateLimitWithFirestore(
   key: string,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
-  const db = getFirebaseAdminFirestore();
+  const db = await getFirestore();
   const rateLimitRef = db.collection('rateLimits').doc(key);
 
   try {
@@ -258,7 +267,7 @@ export function resetRateLimit(key: string): void {
  * @author AMBROISE PARK Consulting
  */
 export async function resetRateLimitInFirestore(key: string): Promise<void> {
-  const db = getFirebaseAdminFirestore();
+  const db = await getFirestore();
   const rateLimitRef = db.collection('rateLimits').doc(key);
 
   try {

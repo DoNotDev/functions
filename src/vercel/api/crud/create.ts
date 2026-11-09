@@ -9,22 +9,21 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+
 import type { CreateEntityData } from '@donotdev/core/server';
-import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
 import { handleError } from '../../../shared/errorHandling.js';
 import {
   prepareForFirestore,
   transformFirestoreData,
-} from '../../../shared/index.js';
-import { createMetadata } from '../../../shared/index.js';
+} from '../../../shared/firebase.js';
+import { createMetadata } from '../../../shared/metadata.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import {
   validateCollectionName,
   validateDocument,
 } from '../../../shared/utils.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
   req: NextApiRequest,
@@ -68,6 +67,8 @@ export default async function handler(
     };
 
     // Save the document to Firestore
+    const { getFirebaseAdminFirestore } =
+      await import('@donotdev/firebase/server');
     const db = getFirebaseAdminFirestore();
     const docRef = await db
       .collection(schema.metadata.collection)

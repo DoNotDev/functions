@@ -11,11 +11,13 @@
 
 import { logger } from 'firebase-functions/v2';
 import { onRequest } from 'firebase-functions/v2/https';
+import type { HttpsFunction } from 'firebase-functions/v2/https';
 
 import type { StripeBackConfig } from '@donotdev/core/server';
 import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { updateUserSubscription } from '../../shared/billing/helpers/updateUserSubscription.js';
+import { createFirestoreIdempotencyStore } from '../../shared/billing/idempotency.js';
 import { processWebhook } from '../../shared/billing/webhookHandler.js';
 import { handleError } from '../../shared/errorHandling.js';
 import {
@@ -25,8 +27,6 @@ import {
 } from '../../shared/utils.js'; // ✅ IMPORT INIT
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey, stripeWebhookSecret } from '../config/secrets.js'; // ✅ IMPORT SECRETS
-
-import type { HttpsFunction } from 'firebase-functions/v2/https';
 
 /**
  * Read raw body from request stream
@@ -48,7 +48,22 @@ async function getRawBody(req: any): Promise<Buffer> {
 }
 
 /**
- * Create Firebase webhook handler from billing config
+ * Create the Firebase Stripe webhook (HTTPS function) from the app's back config.
+ * Events are stored in Firestore `webhook_idempotency`; any failure answers
+ * non-2xx so Stripe retries the event.
+ *
+ * @example
+ * ```typescript
+ * // functions/src/index.ts
+ * import { createStripeWebhook } from '@donotdev/functions/firebase';
+ * import { stripeBackConfig } from './config/stripeBackConfig.js';
+ *
+ * export const stripeWebhook = createStripeWebhook(stripeBackConfig);
+ * ```
+ *
+ * @version 0.2.0
+ * @since 0.0.1
+ * @author AMBROISE PARK Consulting
  */
 export function createStripeWebhook(
   billingConfig: StripeBackConfig
@@ -117,7 +132,8 @@ export function createStripeWebhook(
         stripe,
         billingConfig,
         updateUserSubscription,
-        authProvider
+        authProvider,
+        createFirestoreIdempotencyStore()
       );
 
       logger.info('[Firebase Webhook] Success', result);

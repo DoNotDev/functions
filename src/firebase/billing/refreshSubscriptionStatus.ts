@@ -9,6 +9,8 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { CallableRequest } from 'firebase-functions/v2/https';
+import type Stripe from 'stripe';
 import * as v from 'valibot';
 
 import type { RefreshSubscriptionRequest } from '@donotdev/core/server';
@@ -17,9 +19,6 @@ import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 import { stripe, validateStripeEnvironment } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
-
-import type { CallableRequest } from 'firebase-functions/v2/https';
-import type Stripe from 'stripe';
 
 /**
  * Schema for refreshing subscription status

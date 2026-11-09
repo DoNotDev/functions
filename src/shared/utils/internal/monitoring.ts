@@ -9,9 +9,17 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { logger } from 'firebase-functions/v2';
+import { logger } from '../../logger.js';
 
-import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
+/**
+ * Firestore, loaded on first use. `firebase-admin` is an optional peer:
+ * Supabase deployments never load it.
+ */
+async function getFirestore() {
+  const { getFirebaseAdminFirestore } =
+    await import('@donotdev/firebase/server');
+  return getFirebaseAdminFirestore();
+}
 
 /**
  * Payment metrics data structure
@@ -54,7 +62,7 @@ export async function recordPaymentMetrics(
   metrics: PaymentMetrics
 ): Promise<void> {
   try {
-    const db = getFirebaseAdminFirestore();
+    const db = await getFirestore();
     const metricsRef = db.collection('payment_metrics').doc();
     await metricsRef.set({
       ...metrics,
@@ -86,7 +94,7 @@ export async function checkPaymentFailureRate(
   timeWindowHours: number = 24
 ): Promise<{ failureRate: number; shouldAlert: boolean }> {
   try {
-    const db = getFirebaseAdminFirestore();
+    const db = await getFirestore();
     const cutoffTime = new Date();
     cutoffTime.setHours(cutoffTime.getHours() - timeWindowHours);
 
@@ -135,7 +143,7 @@ export async function checkPaymentVolume(
   volumeThreshold: number = 10000 // $10,000 default threshold
 ): Promise<{ totalVolume: number; shouldAlert: boolean }> {
   try {
-    const db = getFirebaseAdminFirestore();
+    const db = await getFirestore();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -180,7 +188,7 @@ async function triggerPaymentFailureAlert(
   failedPayments: number
 ): Promise<void> {
   try {
-    const db = getFirebaseAdminFirestore();
+    const db = await getFirestore();
     const alertRef = db.collection('payment_alerts').doc();
     await alertRef.set({
       type: 'payment_failure_rate',
@@ -221,7 +229,7 @@ async function triggerHighVolumeAlert(
   threshold: number
 ): Promise<void> {
   try {
-    const db = getFirebaseAdminFirestore();
+    const db = await getFirestore();
     const alertRef = db.collection('payment_alerts').doc();
     await alertRef.set({
       type: 'high_payment_volume',
@@ -264,7 +272,7 @@ export async function getPaymentMetricsSummary(
   averageAmount: number;
 }> {
   try {
-    const db = getFirebaseAdminFirestore();
+    const db = await getFirestore();
     const metricsRef = db.collection('payment_metrics');
     const metrics = await metricsRef
       .where('timestamp', '>=', startDate.toISOString())
@@ -326,7 +334,7 @@ export async function cleanupOldMetrics(
   alertsRetentionDays: number = 30
 ): Promise<void> {
   try {
-    const db = getFirebaseAdminFirestore();
+    const db = await getFirestore();
     const now = new Date();
 
     // Clean up old metrics

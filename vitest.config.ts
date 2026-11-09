@@ -25,7 +25,7 @@ export default defineConfig({
       ),
       ...sharedAliases,
     },
-    extensions: ['.ts', '.js', '.mjs'],
+    extensions: ['.ts', '.tsx', '.js', '.mjs'],
   },
   test: {
     environment: 'node',

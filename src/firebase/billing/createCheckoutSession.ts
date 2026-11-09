@@ -5,10 +5,16 @@
  * @description Firebase callable function for creating Stripe checkout sessions.
  * Delegates to shared createCheckoutAlgorithm (SSOT).
  *
- * @version 0.2.0
+ * @version 0.3.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
+import type Stripe from 'stripe';
 
 import type {
   CreateCheckoutSessionRequest,
@@ -17,7 +23,9 @@ import type {
 import { CreateCheckoutSessionRequestSchema } from '@donotdev/core/server';
 import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
+import { assertCheckoutSessionMetadata } from '../../shared/billing/checkoutValidation.js';
 import { createCheckoutAlgorithm } from '../../shared/billing/createCheckout.js';
+import type { StripeSessionProvider } from '../../shared/billing/createCheckout.js';
 import {
   initStripe,
   stripe,
@@ -26,11 +34,6 @@ import {
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';
-
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 /**
  * Business logic for creating Stripe checkout session.
@@ -48,52 +51,28 @@ async function createCheckoutSessionLogic(
   initStripe(stripeSecretKey.value());
   validateStripeEnvironment();
 
-  // Create Stripe provider
-  const stripeProvider = {
-    async createCheckoutSession(params: {
-      priceId?: string;
-      unitAmount?: number;
-      productName?: string;
-      currency?: string;
-      customerEmail?: string;
-      metadata: Record<string, string>;
-      allowPromotionCodes: boolean;
-      successUrl: string;
-      cancelUrl: string;
-      mode?: 'payment' | 'subscription';
-    }) {
-      const session = await stripe.checkout.sessions.create({
-        line_items: [
-          params.priceId
-            ? { price: params.priceId, quantity: 1 }
-            : {
-                price_data: {
-                  currency: params.currency || 'eur',
-                  unit_amount: params.unitAmount!,
-                  product_data: { name: params.productName! },
-                },
-                quantity: 1,
-              },
-        ],
-        mode: params.mode || 'payment',
-        allow_promotion_codes: params.allowPromotionCodes,
-        success_url: params.successUrl,
-        cancel_url: params.cancelUrl,
-        customer_email: params.customerEmail,
-        metadata: {
-          ...params.metadata,
-          firebaseUid: params.metadata.userId || '',
-        },
-        ...(params.mode === 'subscription' && {
+  const stripeProvider: StripeSessionProvider = {
+    async createStripeSession(params) {
+      // 0.1.x Firebase sessions carry firebaseUid alongside userId
+      /** @grill-refuted Firebase-only by design (0.1.x parity); nothing reads firebaseUid, userId is the cross-provider key. */
+      const firebaseUid = context.uid;
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
+        ...params,
+        metadata: { ...params.metadata, firebaseUid },
+        ...(params.subscription_data && {
           subscription_data: {
-            metadata: {
-              ...params.metadata,
-              firebaseUid: params.metadata.userId || '',
-            },
+            ...params.subscription_data,
+            metadata: { ...params.subscription_data.metadata, firebaseUid },
           },
         }),
-      });
+      };
+      assertCheckoutSessionMetadata(sessionParams);
+      const session = await stripe.checkout.sessions.create(sessionParams);
       return { id: session.id, url: session.url };
+    },
+    async retrieveTaxRate(id) {
+      const rate = await stripe.taxRates.retrieve(id);
+      return { id: rate.id, inclusive: rate.inclusive };
     },
   };
 
@@ -105,15 +84,10 @@ async function createCheckoutSessionLogic(
     },
   };
 
-  // Inject userId from authenticated context (not from client)
-  const requestWithUserId = {
-    ...data,
-    userId: context.uid,
-  };
-
-  // Delegate to shared algorithm (SSOT)
+  // userId comes from the authenticated context, never from the client
   return createCheckoutAlgorithm(
-    requestWithUserId,
+    data,
+    context.uid,
     stripeProvider,
     authProvider,
     billingConfig

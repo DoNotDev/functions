@@ -9,6 +9,9 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+import type * as v from 'valibot';
+
 import {
   OAUTH_PARTNERS,
   exchangeTokenSchema,
@@ -21,9 +24,6 @@ import {
   createErrorResponse,
 } from '../../../shared/utils.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
-import type * as v from 'valibot';
 
 /** Validate Mastodon instance URL to prevent SSRF */
 function validateInstanceUrl(url: string): void {

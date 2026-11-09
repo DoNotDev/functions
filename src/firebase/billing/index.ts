@@ -21,10 +21,17 @@ export { createStripeWebhook } from './webhookHandler.js';
 // Helpers (via shared)
 export * from '../../shared/billing/helpers/index.js';
 
-// Idempotency utilities (for advanced users)
+// Webhook idempotency stores
 export {
+  createFirestoreIdempotencyStore,
   createIdempotencyStore,
   resetIdempotencyStore,
+  ReservationLostError,
+} from '../../shared/billing/idempotency.js';
+export type {
+  IdempotencyStore,
+  LegacyIdempotencyStore,
+  ReservationResult,
 } from '../../shared/billing/idempotency.js';
 
 // Detection utilities

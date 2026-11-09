@@ -74,8 +74,10 @@ vi.mock('@donotdev/firebase/server', () => ({
 }));
 
 // Import AFTER mocks are in place.
-import { bulkEntityLogicFactory } from '../bulk';
 import { BulkCollisionError } from '@donotdev/core/server';
+
+import { bulkEntityLogicFactory } from '../bulk';
+
 import * as v from 'valibot';
 
 // ---------------------------------------------------------------------------
@@ -126,6 +128,7 @@ describe('bulkEntityLogicFactory', () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
       createSchema,
+      createSchema,
       updateSchema,
       access
     );
@@ -175,6 +178,7 @@ describe('bulkEntityLogicFactory', () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
       createSchema,
+      createSchema,
       updateSchema,
       access
     );
@@ -194,6 +198,7 @@ describe('bulkEntityLogicFactory', () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
       createSchema,
+      createSchema,
       updateSchema,
       access
     );
@@ -208,6 +213,7 @@ describe('bulkEntityLogicFactory', () => {
   it('rejects with BulkCollisionError when id is in updates AND deletes', async () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
+      createSchema,
       createSchema,
       updateSchema,
       access
@@ -231,6 +237,7 @@ describe('bulkEntityLogicFactory', () => {
   it('rejects insert that fails createSchema without opening a transaction', async () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
+      createSchema,
       createSchema,
       updateSchema,
       access
@@ -259,6 +266,7 @@ describe('bulkEntityLogicFactory', () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
       createSchema,
+      createSchema,
       updateSchema,
       strictAccess
     );
@@ -286,6 +294,7 @@ describe('bulkEntityLogicFactory', () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
       createSchema,
+      createSchema,
       updateSchema,
       strictAccess
     );
@@ -300,6 +309,7 @@ describe('bulkEntityLogicFactory', () => {
   it('propagates transaction rollback errors (no partial writes surfaced)', async () => {
     const logic = bulkEntityLogicFactory(
       COLLECTION,
+      createSchema,
       createSchema,
       updateSchema,
       access

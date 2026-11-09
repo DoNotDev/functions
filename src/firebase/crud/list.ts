@@ -10,6 +10,10 @@
  */
 
 import { logger } from 'firebase-functions/v2';
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
 import {
@@ -29,11 +33,6 @@ import { transformFirestoreData } from '../../shared/index.js';
 import { DoNotDevError } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_READ_CONFIG } from '../config/constants.js';
-
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 export interface ListEntityRequest {
   where?: Array<[string, any, any]>;

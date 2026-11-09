@@ -43,7 +43,7 @@ export function validateEnvironment(): void {
   if (!apiVersion.match(/^\d{4}-\d{2}-\d{2}\./)) {
     throw new Error(
       `❌ Invalid STRIPE_API_VERSION format: "${apiVersion}"\n` +
-        `Expected format: YYYY-MM-DD.name (e.g., "2025-09-30.clover")`
+        `Expected format: YYYY-MM-DD.name (e.g., "2025-02-24.acacia")`
     );
   }
 

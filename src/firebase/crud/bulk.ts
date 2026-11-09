@@ -15,7 +15,11 @@
  */
 
 import { logger } from 'firebase-functions/v2';
-import * as v from 'valibot';
+import type {
+  CallableFunction,
+  CallableRequest,
+} from 'firebase-functions/v2/https';
+import type * as v from 'valibot';
 
 import { BulkRequestSchema, DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
 import type {
@@ -33,11 +37,6 @@ import {
 } from '../../shared/index.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
-
-import type {
-  CallableFunction,
-  CallableRequest,
-} from 'firebase-functions/v2/https';
 
 /**
  * Request type for the bulk endpoint. Identical to the wire schema; kept as a

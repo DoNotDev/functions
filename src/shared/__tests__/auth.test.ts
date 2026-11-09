@@ -5,9 +5,6 @@ vi.mock('@donotdev/core/server', () => ({
   hasProvider: vi.fn(() => false),
   getProvider: vi.fn(),
 }));
-vi.mock('@donotdev/firebase/server', () => ({
-  getFirebaseAdminAuth: vi.fn(),
-}));
 
 import { assertAuthenticated } from '../utils/internal/auth';
 

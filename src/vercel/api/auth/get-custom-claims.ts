@@ -9,12 +9,10 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { handleError } from '../../../shared/errorHandling.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(
   req: NextApiRequest,
@@ -27,6 +25,7 @@ export default async function handler(
   try {
     // C1: verify JWT — previously only checked header presence.
     const uid = await verifyAuthToken(req);
+    const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
     const user = await getFirebaseAdminAuth().getUser(uid);
     return res.status(200).json({ customClaims: user.customClaims || {} });
   } catch (error) {

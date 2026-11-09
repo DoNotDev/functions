@@ -38,6 +38,8 @@ vi.mock('../utils/internal/auth.js', () => ({
   assertAdmin: vi.fn((uid: string) => Promise.resolve(uid)),
 }));
 
+import { DoNotDevError } from '@donotdev/core/server';
+
 import {
   getUserRole,
   createSuccessResponse,
@@ -49,7 +51,6 @@ import {
 } from '../utils';
 
 // Need to import DoNotDevError from the mocked module for instanceof checks
-import { DoNotDevError } from '@donotdev/core/server';
 
 // ---------------------------------------------------------------------------
 // getUserRole

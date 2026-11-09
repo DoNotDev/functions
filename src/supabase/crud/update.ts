@@ -14,7 +14,7 @@ import * as v from 'valibot';
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
 import { defaultFieldMapper } from '@donotdev/supabase/server';
 
-import { updateMetadata } from '../../shared/index.js';
+import { updateMetadata } from '../../shared/metadata.js';
 import { DoNotDevError, validateDocument } from '../../shared/utils.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { checkIdempotency, storeIdempotency } from '../utils/idempotency.js';

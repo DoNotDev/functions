@@ -9,17 +9,16 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { NextApiRequest, NextApiResponse } from 'next';
+import type * as v from 'valibot';
+
 import {
   checkGitHubAccessSchema,
   type CheckGitHubAccessRequest,
 } from '@donotdev/core/server';
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
-import { GitHubApiService } from '../../../shared/index.js';
+import { GitHubApiService } from '../../../shared/github.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
-
-import type { NextApiRequest, NextApiResponse } from 'next';
-import type * as v from 'valibot';
 
 /**
  * Business logic for checking GitHub access
@@ -63,6 +62,7 @@ async function checkGitHubAccessLogic(
   );
 
   // Also check custom claims for access record
+  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
   const user = await getFirebaseAdminAuth().getUser(userId);
   const customClaims = user.customClaims || {};
   const githubAccess =

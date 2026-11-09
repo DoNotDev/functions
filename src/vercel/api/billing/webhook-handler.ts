@@ -4,30 +4,45 @@
  * @fileoverview Stripe webhook handler API
  * @description Vercel API route for handling Stripe webhook events
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-
-import { logger } from 'firebase-functions/v2';
-
-import type { StripeBackConfig } from '@donotdev/core/server';
-import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
-
-import { updateUserSubscription } from '../../../shared/billing/helpers/updateUserSubscription.js';
-import { processWebhook } from '../../../shared/billing/webhookHandler.js';
-import { stripe } from '../../../shared/utils.js';
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 
+import type { StripeBackConfig } from '@donotdev/core/server';
+
+import { resolveBillingBackend } from './backend.js';
+import type { VercelBillingOptions } from './backend.js';
+import { updateUserSubscription } from '../../../shared/billing/helpers/updateUserSubscription.js';
+import { processWebhook } from '../../../shared/billing/webhookHandler.js';
+import { logger } from '../../../shared/logger.js';
+import { stripe } from '../../../shared/utils.js';
+
 /**
- * Create Vercel webhook handler from billing config
+ * Create Vercel webhook handler from billing config.
+ * Idempotency storage and user claims follow `options.backend`.
+ * Any failure answers non-2xx so Stripe retries the event.
  *
- * @version 0.1.0
+ * @example
+ * ```typescript
+ * // api/billing/stripe-webhook.ts
+ * import { createStripeWebhook } from '@donotdev/functions/vercel';
+ * import { billingConfig } from '../../config/billing';
+ *
+ * export const config = { api: { bodyParser: false } };
+ * export default createStripeWebhook(billingConfig, { backend: 'supabase' });
+ * ```
+ *
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-export function createStripeWebhook(billingConfig: StripeBackConfig) {
+export function createStripeWebhook(
+  billingConfig: StripeBackConfig,
+  options: VercelBillingOptions
+) {
   return async (req: NextApiRequest, res: NextApiResponse) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed' });
@@ -55,20 +70,9 @@ export function createStripeWebhook(billingConfig: StripeBackConfig) {
       // Get raw body
       const rawBody = await getRawBody(req);
 
-      // C5: Build a proper authProvider so subscription webhook events can activate.
-      // null was previously passed which caused processWebhook to throw on every
-      // checkout.session.completed / invoice.payment_succeeded event.
-      const authProvider = {
-        async getUser(userId: string) {
-          return getFirebaseAdminAuth().getUser(userId);
-        },
-        async setCustomUserClaims(
-          userId: string,
-          claims: Record<string, unknown>
-        ) {
-          await getFirebaseAdminAuth().setCustomUserClaims(userId, claims);
-        },
-      };
+      const { authProvider, idempotencyStore } = await resolveBillingBackend(
+        options.backend
+      );
 
       // Call shared algorithm
       await processWebhook(
@@ -78,13 +82,15 @@ export function createStripeWebhook(billingConfig: StripeBackConfig) {
         stripe,
         billingConfig,
         updateUserSubscription,
-        authProvider
+        authProvider,
+        idempotencyStore
       );
 
       res.status(200).json({ received: true });
     } catch (error) {
-      logger.error('Vercel webhook error', {
-        error: error instanceof Error ? error.message : String(error),
+      logger.error('[Vercel Webhook] Error', {
+        error: error instanceof Error ? error : new Error(String(error)),
+        operation: 'webhook_processing',
       });
       res.status(400).json({
         error: 'Webhook processing failed',
