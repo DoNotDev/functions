@@ -75,7 +75,7 @@ async function getFirebaseAuth() {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-export function assertAuthenticated(uid: string): string {
+export function assertAuthenticated(uid: string | undefined): string {
   // G62: Validate uid is a non-empty string — reject non-string values at runtime
   if (!uid || typeof uid !== 'string') {
     throw new Error('Authentication required');
@@ -258,8 +258,3 @@ export async function verifyAuthToken(
   const { uid } = await verifyToken(token, provider);
   return uid;
 }
-
-/**
- * @deprecated Use verifyAuthToken instead. Kept for backwards compatibility.
- */
-export const verifyFirebaseAuthToken = verifyAuthToken;

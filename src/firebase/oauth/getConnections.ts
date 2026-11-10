@@ -14,7 +14,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import type { OAuthPurpose } from '@donotdev/core/server';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
-import { assertAuthenticated } from '../../shared/utils.js';
+import { assertAuthenticated } from '../../shared/utils/internal/auth.js';
 
 /**
  * Get a user's OAuth connections
@@ -26,7 +26,7 @@ import { assertAuthenticated } from '../../shared/utils.js';
 export const getConnections = onCall<{ purpose?: OAuthPurpose }>(
   async (request) => {
     // Verify authentication
-    const uid = assertAuthenticated(request.auth);
+    const uid = assertAuthenticated(request.auth?.uid);
 
     const { purpose } = request.data || {};
 

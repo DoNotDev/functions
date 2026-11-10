@@ -4,7 +4,7 @@
  * @fileoverview Create Checkout Session Algorithm
  * @description Platform-agnostic algorithm for creating Stripe checkout sessions.
  * StripePayment/StripeSubscription items keep the 0.1.x behaviour (request or
- * back-config priceId, 0.1.x dynamic pricing). StripeOrder items are priced on
+ * back-config priceId). StripeOrder items are priced on
  * the server (`resolveLineItems`) and need a {@link StripeSessionProvider}.
  *
  * @version 0.2.0
@@ -206,8 +206,8 @@ type CheckoutArgs =
  * Create checkout session algorithm
  *
  * 1. Resolve the billing config item and verify the user
- * 2. Single-price items: 0.1.x pricing (request/back-config priceId, dynamic pricing)
- * 3. `beforeCheckout` hook (block/allow; 0.1.x dynamic-pricing overrides)
+ * 2. Single-price items: 0.1.x pricing (request/back-config priceId)
+ * 3. `beforeCheckout` hook (block/allow)
  * 4. StripeOrder: reject inclusive manual Tax Rates, `resolveLineItems` prices every line
  *    and may set per-order session options (`ResolvedOrder.session`: tax rates,
  *    payment methods, expiry, invoice footer)
@@ -301,8 +301,6 @@ export async function createCheckoutAlgorithm(
   );
 
   const allowPromotionCodes = request.allowPromotionCodes ?? true;
-  let unitAmount = request.unitAmount;
-  let productName = request.productName;
 
   if (billingItem.beforeCheckout) {
     const options: BeforeCheckoutOptions = {
@@ -322,11 +320,6 @@ export async function createCheckoutAlgorithm(
       throw new Error(
         hookResult.reason || 'Checkout blocked by beforeCheckout hook'
       );
-    }
-    // 0.1.x: overrides apply to dynamic pricing only
-    if (plan?.dynamic && hookResult.overrides) {
-      unitAmount = hookResult.overrides.unitAmount ?? unitAmount;
-      productName = hookResult.overrides.productName ?? productName;
     }
   }
 
@@ -382,17 +375,8 @@ export async function createCheckoutAlgorithm(
     assertCheckoutSessionMetadata(params);
     session = await stripeProvider.createStripeSession(params);
   } else {
-    const dynamic = !!plan?.dynamic && !!unitAmount && !!productName;
-    // 0.1.x: an overridden amount still respects the security cap
-    if (dynamic && billingItem.maxUnitAmount && unitAmount! > billingItem.maxUnitAmount) {
-      throw new Error(
-        `Hook-overridden unit amount ${unitAmount} exceeds maximum allowed: ${billingItem.maxUnitAmount}`
-      );
-    }
     const params: CheckoutSessionParams = {
       priceId: plan?.priceId,
-      unitAmount: dynamic ? unitAmount : undefined,
-      productName: dynamic ? productName : undefined,
       currency: request.currency || billingItem.currency || 'eur',
       customerEmail: request.customerEmail,
       metadata,

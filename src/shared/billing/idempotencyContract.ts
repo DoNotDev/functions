@@ -50,27 +50,6 @@ export interface IdempotencyStore {
 }
 
 /**
- * Store with the 0.1.x accessors.
- *
- * @deprecated Use {@link IdempotencyStore}: `reserve` returns three states and
- * an owner token; `checkAndReserve` and `isProcessed` do not.
- * @version 0.2.0
- * @since 0.2.0
- * @author AMBROISE PARK Consulting
- */
-export interface LegacyIdempotencyStore extends IdempotencyStore {
-  /** 0.1.x: `true` when the event must be skipped (processed or live lease). */
-  checkAndReserve(eventId: string): Promise<boolean>;
-  /** Whether the event was processed (non-atomic read). */
-  isProcessed(eventId: string): Promise<boolean>;
-  /**
-   * Mark processed. Without `ownerToken` (0.1.x call) the write is unconditional.
-   * @throws {ReservationLostError} When `ownerToken` is given and no longer owns the event
-   */
-  markProcessed(eventId: string, ownerToken?: string): Promise<void>;
-}
-
-/**
  * Thrown by `markProcessed` when the caller no longer owns the reservation:
  * its lease expired and another delivery retook the event, or the row is gone.
  * Retrying cannot succeed.

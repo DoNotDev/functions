@@ -18,15 +18,13 @@
  * @author AMBROISE PARK Consulting
  */
 
-import { isFirestoreConfigured } from '../utils/detectFirestore.js';
-import { createFirestoreIdempotencyStore } from './firestoreIdempotency.js';
 import {
   RESERVATION_LEASE_MS,
   ReservationLostError,
   newOwnerToken,
 } from './idempotencyContract.js';
 import type {
-  LegacyIdempotencyStore,
+  IdempotencyStore,
   ReservationResult,
 } from './idempotencyContract.js';
 
@@ -37,7 +35,6 @@ export {
 } from './idempotencyContract.js';
 export type {
   IdempotencyStore,
-  LegacyIdempotencyStore,
   ReservationResult,
 } from './idempotencyContract.js';
 export { createFirestoreIdempotencyStore } from './firestoreIdempotency.js';
@@ -53,7 +50,7 @@ export { createFirestoreIdempotencyStore } from './firestoreIdempotency.js';
  * @since 0.2.0
  * @author AMBROISE PARK Consulting
  */
-export function createInMemoryIdempotencyStore(): LegacyIdempotencyStore {
+export function createInMemoryIdempotencyStore(): IdempotencyStore {
   const events = new Map<
     string,
     { status: 'processing' | 'processed'; ownerToken: string; at: number }
@@ -71,17 +68,14 @@ export function createInMemoryIdempotencyStore(): LegacyIdempotencyStore {
   };
   return {
     reserve,
-    async checkAndReserve(eventId) {
-      return (await reserve(eventId)).state !== 'reserved';
-    },
     async markProcessed(eventId, ownerToken) {
       const entry = events.get(eventId);
-      if (ownerToken !== undefined && entry?.ownerToken !== ownerToken) {
+      if (entry?.ownerToken !== ownerToken) {
         throw new ReservationLostError(eventId);
       }
       events.set(eventId, {
         status: 'processed',
-        ownerToken: ownerToken ?? entry?.ownerToken ?? newOwnerToken(),
+        ownerToken,
         at: Date.now(),
       });
     },
@@ -93,51 +87,7 @@ export function createInMemoryIdempotencyStore(): LegacyIdempotencyStore {
       events.delete(eventId);
       return true;
     },
-    async isProcessed(eventId) {
-      return events.get(eventId)?.status === 'processed';
-    },
   };
-}
-
-// =============================================================================
-// 0.1.x auto-detection (deprecated)
-// =============================================================================
-
-let cachedStore: LegacyIdempotencyStore | null = null;
-
-/**
- * 0.1.x store auto-detection: Firestore when configured, else in-memory.
- *
- * @deprecated In-memory is not durable across instances. Pass an explicit store:
- * {@link createFirestoreIdempotencyStore} or `createSupabaseIdempotencyStore`.
- * Framework webhook entry points already do.
- * @version 0.2.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export function createIdempotencyStore(): LegacyIdempotencyStore {
-  if (cachedStore) return cachedStore;
-  if (isFirestoreConfigured()) {
-    cachedStore = createFirestoreIdempotencyStore();
-  } else {
-    console.warn(
-      '[Idempotency] Firestore not configured, using in-memory (not durable). Pass an explicit store.'
-    );
-    cachedStore = createInMemoryIdempotencyStore();
-  }
-  return cachedStore;
-}
-
-/**
- * Reset the store cached by {@link createIdempotencyStore} (tests).
- *
- * @deprecated See {@link createIdempotencyStore}.
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export function resetIdempotencyStore() {
-  cachedStore = null;
 }
 
 export {

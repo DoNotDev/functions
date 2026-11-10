@@ -22,7 +22,6 @@ export { createBaseFunction } from './baseFunction.js';
 
 // CRUD function registration utility
 export {
-  registerCrudFunctions,
   createCrudFunctions,
   type CrudFunctions,
 } from './registerCrudFunctions.js';

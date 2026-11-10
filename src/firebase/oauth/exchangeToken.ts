@@ -21,7 +21,7 @@ import {
   FieldValue,
 } from '@donotdev/firebase/server';
 
-import { assertAuthenticated } from '../../shared/utils.js';
+import { assertAuthenticated } from '../../shared/utils/internal/auth.js';
 
 /**
  * Exchange OAuth authorization code for access token
@@ -32,7 +32,7 @@ import { assertAuthenticated } from '../../shared/utils.js';
  */
 export const exchangeToken = onCall<ExchangeTokenRequest>(async (request) => {
   // Verify authentication
-  const uid = assertAuthenticated(request.auth);
+  const uid = assertAuthenticated(request.auth?.uid);
 
   const { provider, purpose, code, redirectUri, codeVerifier, idempotencyKey } =
     request.data;

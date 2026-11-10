@@ -32,7 +32,7 @@ const URLS = {
   cancelUrl: 'https://app.example.com/billing/cancel',
 };
 
-/** 0.1.x back config: no priceId, client-supplied price or dynamic amount. */
+/** 0.1.x back config: no priceId, client-supplied price. */
 function makeLegacyConfig(
   beforeCheckout?: BeforeCheckoutHook
 ): StripeBackConfig {
@@ -42,7 +42,6 @@ function makeLegacyConfig(
       name: 'Credits',
       price: 0,
       currency: 'eur',
-      maxUnitAmount: 50000,
       tier: 'credits',
       duration: 'lifetime',
       beforeCheckout,
@@ -109,84 +108,6 @@ describe('0.1.x (a): back-config item without priceId', () => {
     });
   });
 
-  it('dynamic pricing: unitAmount + productName within maxUnitAmount', async () => {
-    const stripe = makeSessionProvider();
-    const request = legacyRequest({
-      unitAmount: 2500,
-      productName: '25 credits',
-      mode: 'payment',
-      metadata: { billingConfigKey: 'credits' },
-    });
-    await createCheckoutAlgorithm(request, USER_ID, stripe, auth, makeLegacyConfig());
-    expect(stripe.createStripeSession.mock.calls[0]?.[0]).toMatchObject({
-      mode: 'payment',
-      line_items: [
-        {
-          price_data: {
-            currency: 'eur',
-            unit_amount: 2500,
-            product_data: { name: '25 credits' },
-          },
-          quantity: 1,
-        },
-      ],
-    });
-  });
-
-  it.each([
-    ['above maxUnitAmount', { unitAmount: 60000 }, /exceeds maximum allowed: 50000/],
-    ['below 1.00', { unitAmount: 50 }, /at least 100 cents/],
-    ['subscription mode', { mode: 'subscription' }, /not supported for subscriptions/],
-  ])('dynamic pricing keeps the 0.1.x guards (%s)', async (_label, patch, error) => {
-    const request = legacyRequest({
-      unitAmount: 2500,
-      productName: '25 credits',
-      metadata: { billingConfigKey: 'credits' },
-      ...patch,
-    });
-    await expect(
-      createCheckoutAlgorithm(request, USER_ID, makeSessionProvider(), auth, makeLegacyConfig())
-    ).rejects.toThrow(error);
-  });
-
-  it('dynamic pricing without maxUnitAmount fails as in 0.1.x', async () => {
-    const config = makeLegacyConfig();
-    const { maxUnitAmount: _omit, ...noCap } = config.credits as any;
-    config.credits = noCap;
-    const request = legacyRequest({
-      unitAmount: 2500,
-      productName: '25 credits',
-      metadata: { billingConfigKey: 'credits' },
-    });
-    await expect(
-      createCheckoutAlgorithm(request, USER_ID, makeSessionProvider(), auth, config)
-    ).rejects.toThrow(/requires maxUnitAmount/);
-  });
-
-  it('beforeCheckout overrides apply to dynamic pricing, still capped', async () => {
-    const stripe = makeSessionProvider();
-    const config = makeLegacyConfig(async () => ({
-      allowed: true,
-      overrides: { unitAmount: 4000, productName: 'Server-priced credits' },
-    }));
-    const request = legacyRequest({
-      unitAmount: 100,
-      productName: 'client',
-      metadata: { billingConfigKey: 'credits' },
-    });
-    await createCheckoutAlgorithm(request, USER_ID, stripe, auth, config);
-    expect(stripe.createStripeSession.mock.calls[0]?.[0].line_items?.[0]).toMatchObject({
-      price_data: { unit_amount: 4000, product_data: { name: 'Server-priced credits' } },
-    });
-
-    const capped = makeLegacyConfig(async () => ({
-      allowed: true,
-      overrides: { unitAmount: 99999 },
-    }));
-    await expect(
-      createCheckoutAlgorithm(request, USER_ID, makeSessionProvider(), auth, capped)
-    ).rejects.toThrow(/Hook-overridden unit amount 99999/);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -194,20 +115,18 @@ describe('0.1.x (a): back-config item without priceId', () => {
 // ---------------------------------------------------------------------------
 
 describe('0.1.x (b): beforeCheckout options', () => {
-  it('receives priceId / mode / unitAmount / currency, plus the new fields', async () => {
+  it('receives priceId / mode / currency, plus the new fields', async () => {
     const hook = vi.fn<BeforeCheckoutHook>(async () => ({ allowed: true }));
     const request = legacyRequest({
-      unitAmount: 2500,
-      productName: '25 credits',
+      priceId: 'price_client',
       currency: 'usd',
       mode: 'payment',
       metadata: { billingConfigKey: 'credits' },
     });
     await createCheckoutAlgorithm(request, USER_ID, makeSessionProvider(), auth, makeLegacyConfig(hook));
     expect(hook.mock.calls[0]?.[1]).toMatchObject({
+      priceId: 'price_client',
       mode: 'payment',
-      unitAmount: 2500,
-      productName: '25 credits',
       currency: 'usd',
       allowPromotionCodes: true,
       metadata: { billingConfigKey: 'credits' },
@@ -276,8 +195,6 @@ describe('0.1.x (c): createCheckoutAlgorithm(request, provider, auth, config)', 
     });
     expect(stripe.createCheckoutSession).toHaveBeenCalledWith({
       priceId: 'price_client',
-      unitAmount: undefined,
-      productName: undefined,
       currency: 'eur',
       customerEmail: 'a@b.co',
       metadata: { billingConfigKey: 'pro_monthly', ref: 'x', userId: USER_ID },
@@ -285,29 +202,6 @@ describe('0.1.x (c): createCheckoutAlgorithm(request, provider, auth, config)', 
       successUrl: URLS.successUrl,
       cancelUrl: URLS.cancelUrl,
       mode: 'subscription',
-    });
-  });
-
-  it('dynamic pricing through a 0.1.x provider', async () => {
-    const stripe = makeLegacyProvider();
-    await createCheckoutAlgorithm(
-      {
-        unitAmount: 2500,
-        productName: '25 credits',
-        userId: USER_ID,
-        metadata: { billingConfigKey: 'credits' },
-        ...URLS,
-      },
-      stripe,
-      auth,
-      makeLegacyConfig()
-    );
-    expect(stripe.createCheckoutSession.mock.calls[0]?.[0]).toMatchObject({
-      priceId: undefined,
-      unitAmount: 2500,
-      productName: '25 credits',
-      currency: 'eur',
-      mode: 'payment',
     });
   });
 

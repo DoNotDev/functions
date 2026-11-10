@@ -4,6 +4,8 @@
 
 ### Patch Changes
 
+- **Breaking:** removed 0.1.x dynamic pricing (`unitAmount` + `productName`, `maxUnitAmount`, `beforeCheckout` `overrides`). Use a `priceId` or StripeOrder.
+- **Breaking:** removed deprecated APIs: `registerCrudFunctions`, `createIdempotencyStore`, `resetIdempotencyStore`, `LegacyIdempotencyStore`, `checkAndReserve`, `isProcessed`, and the `shared/utils` auth and subscription wrappers.
 - **Breaking:** `processWebhook` requires its `idempotencyStore` argument (`createFirestoreIdempotencyStore()` or `createSupabaseIdempotencyStore(...)`). The 7-argument 0.1.x call no longer falls back to Firestore auto-detection. `createIdempotencyStore` stays exported, deprecated.
 - Removed the unused `validateStripeEnvironment` from `@donotdev/functions/shared`.
 - Supabase CRUD list pagination imports `Buffer` from `node:buffer`: Supabase Edge Runtime has no global `Buffer`.

@@ -27,7 +27,7 @@ import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 
 import { handleError } from '../../shared/errorHandling.js';
 import { GitHubApiService } from '../../shared/index.js';
-import { assertAuthenticated } from '../../shared/utils.js';
+import { assertAuthenticated } from '../../shared/utils/internal/auth.js';
 import { AUTH_CONFIG } from '../config/constants.js';
 import { githubPersonalAccessToken } from '../config/secrets.js';
 
@@ -52,7 +52,7 @@ async function grantGitHubAccessInternal(
   >
 ) {
   try {
-    const uid = assertAuthenticated(request.auth);
+    const uid = assertAuthenticated(request.auth?.uid);
 
     // Use provided schema or default to framework schema
     const schema = customSchema || grantGitHubAccessSchema;
@@ -193,7 +193,7 @@ async function revokeGitHubAccessInternal(
   >
 ) {
   try {
-    const uid = assertAuthenticated(request.auth);
+    const uid = assertAuthenticated(request.auth?.uid);
 
     // Use provided schema or default to framework schema
     const schema = customSchema || revokeGitHubAccessSchema;
@@ -324,7 +324,7 @@ async function checkGitHubAccessInternal(
   >
 ) {
   try {
-    const uid = assertAuthenticated(request.auth);
+    const uid = assertAuthenticated(request.auth?.uid);
 
     // Use provided schema or default to framework schema
     const schema = customSchema || checkGitHubAccessSchema;

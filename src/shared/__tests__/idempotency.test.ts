@@ -69,10 +69,8 @@ import {
   WEBHOOK_EVENT_RETENTION_MS,
   WEBHOOK_EVENTS_SQL,
   createFirestoreIdempotencyStore,
-  createIdempotencyStore,
   createInMemoryIdempotencyStore,
   createSupabaseIdempotencyStore,
-  resetIdempotencyStore,
 } from '../billing/idempotency';
 import type { IdempotencyStore } from '../billing/idempotency';
 
@@ -288,35 +286,5 @@ describe('supabase idempotency store', () => {
     expect(WEBHOOK_EVENTS_SQL.trim()).toBe(body.trim());
     expect(body).not.toContain('REVOKE');
     expect(body).toContain("cron.schedule(\n  'cleanup-webhook-events'");
-  });
-});
-
-describe('0.1.x API (deprecated)', () => {
-  afterEach(() => {
-    resetIdempotencyStore();
-    vi.restoreAllMocks();
-  });
-
-  it('auto-detects in-memory without Firestore and caches the instance', () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const store = createIdempotencyStore();
-    expect(createIdempotencyStore()).toBe(store);
-  });
-
-  it('keeps checkAndReserve / isProcessed / tokenless markProcessed working', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const store = createIdempotencyStore();
-    expect(await store.checkAndReserve('evt_l1')).toBe(false);
-    expect(await store.checkAndReserve('evt_l1')).toBe(true);
-    expect(await store.isProcessed('evt_l1')).toBe(false);
-    await store.markProcessed('evt_l1');
-    expect(await store.isProcessed('evt_l1')).toBe(true);
-  });
-
-  it('firestore: tokenless markProcessed writes unconditionally', async () => {
-    const store = createFirestoreIdempotencyStore();
-    await store.markProcessed('evt_l2');
-    expect(await store.isProcessed('evt_l2')).toBe(true);
-    expect(await store.checkAndReserve('evt_l2')).toBe(true);
   });
 });

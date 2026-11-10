@@ -120,25 +120,6 @@ export function createCrudFunctions(
 }
 
 /**
- * @deprecated Use createCrudFunctions() for ESM. This mutates target which doesn't work in ESM.
- * Auto-register CRUD functions for all entities (CJS pattern)
- */
-export function registerCrudFunctions(
-  entities: Record<string, Entity | unknown>,
-  target?: Record<string, any>,
-  options: RegisterOptions = {}
-): CrudFunctions {
-  const functions = createCrudFunctions(entities, options);
-
-  // If target provided, mutate it (CJS compat)
-  if (target) {
-    Object.assign(target, functions);
-  }
-
-  return functions;
-}
-
-/**
  * Type guard to check if a value is an Entity
  */
 function isEntity(value: unknown): value is Entity {

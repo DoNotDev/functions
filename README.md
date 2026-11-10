@@ -52,7 +52,7 @@ functions/src/
 │   │   │   ├── firebase.ts  # Firebase Admin initialization
 │   │   │   ├── errors.ts    # handleError, DoNotDevError
 │   │   │   ├── auth.ts      # assertAuthenticated, assertAdmin
-│   │   │   └── validation.ts # validateStripeEnvironment
+│   │   │   └── validation.ts
 │   │   ├── external/        # Framework utilities
 │   │   │   ├── subscription.ts # getTierFromPriceId, etc.
 │   │   │   ├── metadata.ts  # createMetadata, updateMetadata

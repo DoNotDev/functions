@@ -15,7 +15,7 @@ import { OAUTH_PARTNERS } from '@donotdev/core/server';
 import type { OAuthPartnerId, OAuthPurpose } from '@donotdev/core/server';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
-import { assertAuthenticated } from '../../shared/utils.js';
+import { assertAuthenticated } from '../../shared/utils/internal/auth.js';
 
 /**
  * Disconnect a provider
@@ -29,7 +29,7 @@ export const disconnect = onCall<{
   purpose: OAuthPurpose;
 }>(async (request) => {
   // Verify authentication
-  const uid = assertAuthenticated(request.auth);
+  const uid = assertAuthenticated(request.auth?.uid);
 
   const { provider, purpose } = request.data;
 

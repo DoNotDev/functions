@@ -22,7 +22,7 @@ import {
   newOwnerToken,
 } from './idempotencyContract.js';
 import type {
-  LegacyIdempotencyStore,
+  IdempotencyStore,
   ReservationResult,
 } from './idempotencyContract.js';
 
@@ -75,7 +75,7 @@ function parseEventDoc(eventId: string, data: unknown) {
  * @since 0.2.0
  * @author AMBROISE PARK Consulting
  */
-export function createFirestoreIdempotencyStore(): LegacyIdempotencyStore {
+export function createFirestoreIdempotencyStore(): IdempotencyStore {
   let firebase: typeof import('@donotdev/firebase/server') | null = null;
   const load = async () => {
     if (!firebase) firebase = await import('@donotdev/firebase/server');
@@ -122,9 +122,6 @@ export function createFirestoreIdempotencyStore(): LegacyIdempotencyStore {
 
   return {
     reserve,
-    async checkAndReserve(eventId) {
-      return (await reserve(eventId)).state !== 'reserved';
-    },
     async markProcessed(eventId, ownerToken) {
       const { firestore, Timestamp, refOf } = await load();
       const ref = refOf(eventId);
@@ -136,11 +133,6 @@ export function createFirestoreIdempotencyStore(): LegacyIdempotencyStore {
         expiresAt: Timestamp.fromMillis(now + WEBHOOK_EVENT_RETENTION_MS),
       };
       try {
-        if (ownerToken === undefined) {
-          // 0.1.x call: unconditional write
-          await ref.set(processed);
-          return;
-        }
         await firestore.runTransaction(async (tx) => {
           const snapshot = await tx.get(ref);
           const data = snapshot.exists
@@ -170,17 +162,6 @@ export function createFirestoreIdempotencyStore(): LegacyIdempotencyStore {
           tx.delete(ref);
           return true;
         });
-      } catch (error) {
-        throw handleError(error);
-      }
-    },
-    async isProcessed(eventId) {
-      const { refOf } = await load();
-      try {
-        const snapshot = await refOf(eventId).get();
-        if (!snapshot.exists) return false;
-        const data = parseEventDoc(eventId, snapshot.data());
-        return data.status !== 'processing' && (data.expiresAt ?? 0) >= Date.now();
       } catch (error) {
         throw handleError(error);
       }

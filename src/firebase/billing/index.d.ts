@@ -37,18 +37,6 @@ export { createStripeWebhook } from './webhookHandler.js';
 export * from '../../shared/billing/helpers/index.js';
 
 /**
- * Idempotency utilities for advanced users
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export {
-  createIdempotencyStore,
-  resetIdempotencyStore,
-} from '../../shared/billing/idempotency.js';
-
-/**
  * Firestore detection utilities
  *
  * @version 0.1.0

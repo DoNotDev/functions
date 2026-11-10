@@ -24,13 +24,10 @@ export * from '../../shared/billing/helpers/index.js';
 // Webhook idempotency stores
 export {
   createFirestoreIdempotencyStore,
-  createIdempotencyStore,
-  resetIdempotencyStore,
   ReservationLostError,
 } from '../../shared/billing/idempotency.js';
 export type {
   IdempotencyStore,
-  LegacyIdempotencyStore,
   ReservationResult,
 } from '../../shared/billing/idempotency.js';
 

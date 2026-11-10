@@ -23,23 +23,20 @@ import type {
 
 /** Price resolved for a single-price item (0.1.x rules). */
 export interface PricePlan {
-  /** Fixed price charged; undefined for dynamic pricing */
-  priceId?: string;
-  /** 0.1.x dynamic pricing (client unitAmount + productName) */
-  dynamic: boolean;
+  /** Price charged */
+  priceId: string;
   mode: CheckoutMode;
 }
 
 /**
  * 0.1.x pricing for StripePayment/StripeSubscription: a request priceId (must
- * match the config priceId when set), else 0.1.x dynamic pricing capped by
- * `maxUnitAmount`, else the back-config priceId.
+ * match the config priceId when set), else the back-config priceId.
  */
 export function resolvePricePlan(
   item: StripePaymentBackItem | StripeSubscriptionBackItem,
   request: CreateCheckoutSessionRequest
 ): PricePlan {
-  const { billingConfigKey: key, priceId, unitAmount, productName } = request;
+  const { billingConfigKey: key, priceId } = request;
   const [line] = request.lineItems;
   if (
     request.lineItems.length !== 1 ||
@@ -52,7 +49,6 @@ export function resolvePricePlan(
     );
   }
 
-  const dynamic = !priceId && !!unitAmount && !!productName;
   const mode: CheckoutMode =
     request.mode ?? (item.type === 'StripeSubscription' ? 'subscription' : 'payment');
 
@@ -60,29 +56,7 @@ export function resolvePricePlan(
     if (item.priceId && item.priceId !== priceId) {
       throw new Error('Price ID mismatch with configuration');
     }
-    return { priceId, dynamic, mode };
-  }
-
-  if (dynamic) {
-    if (mode === 'subscription') {
-      throw new Error(
-        'Dynamic pricing (unitAmount) is not supported for subscriptions. Use a Stripe priceId.'
-      );
-    }
-    if (!item.maxUnitAmount) {
-      throw new Error(
-        'Dynamic pricing requires maxUnitAmount in billing config for security'
-      );
-    }
-    if (unitAmount! > item.maxUnitAmount) {
-      throw new Error(
-        `Unit amount ${unitAmount} exceeds maximum allowed: ${item.maxUnitAmount}`
-      );
-    }
-    if (unitAmount! < 100) {
-      throw new Error('Unit amount must be at least 100 cents (1.00)');
-    }
-    return { dynamic, mode };
+    return { priceId, mode };
   }
 
   if (!item.priceId) {
@@ -90,7 +64,7 @@ export function resolvePricePlan(
       `'${key}' has no priceId in the back config: set one, send a priceId, or use StripeOrder for server-priced lines`
     );
   }
-  return { priceId: item.priceId, dynamic, mode };
+  return { priceId: item.priceId, mode };
 }
 
 /** 0.1.x params → Stripe params (what the 0.1.x Firebase/Supabase providers sent). */
@@ -101,16 +75,7 @@ export function toStripeSessionParams(
   return {
     mode,
     line_items: [
-      params.priceId
-        ? { price: params.priceId, quantity: 1 }
-        : {
-            price_data: {
-              currency: params.currency || 'eur',
-              unit_amount: params.unitAmount!,
-              product_data: { name: params.productName! },
-            },
-            quantity: 1,
-          },
+      { price: params.priceId, quantity: 1 },
     ],
     allow_promotion_codes: params.allowPromotionCodes,
     success_url: params.successUrl,

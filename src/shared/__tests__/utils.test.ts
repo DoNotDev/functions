@@ -46,7 +46,6 @@ import {
   createErrorResponse,
   validateDocument,
   validateCollectionName,
-  assertAuthenticated,
 } from '../utils';
 import { validateStripeEnvironment } from '../billing/stripeClient';
 
@@ -234,30 +233,6 @@ describe('validateCollectionName', () => {
 // ---------------------------------------------------------------------------
 // assertAuthenticated
 // ---------------------------------------------------------------------------
-
-describe('assertAuthenticated', () => {
-  it('returns uid when auth has uid', () => {
-    const result = assertAuthenticated({ uid: 'user-123' });
-
-    expect(result).toBe('user-123');
-  });
-
-  it('throws when auth is null', () => {
-    expect(() => assertAuthenticated(null)).toThrow(
-      'User must be authenticated'
-    );
-  });
-
-  it('throws when auth has no uid', () => {
-    expect(() => assertAuthenticated({})).toThrow('User must be authenticated');
-  });
-
-  it('throws when auth.uid is empty string', () => {
-    expect(() => assertAuthenticated({ uid: '' })).toThrow(
-      'User must be authenticated'
-    );
-  });
-});
 
 // ---------------------------------------------------------------------------
 // validateStripeEnvironment

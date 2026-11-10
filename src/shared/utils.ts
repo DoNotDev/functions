@@ -14,35 +14,8 @@ import * as v from 'valibot';
 import { DoNotDevError } from '@donotdev/core/server';
 import type { OAuthPartnerId, UserRole } from '@donotdev/core/server';
 
-import {
-  assertAuthenticated as internalAssertAuthenticated,
-  assertAdmin as internalAssertAdmin,
-} from './utils/internal/auth.js';
-
 // Re-export DoNotDevError for external use
 export { DoNotDevError };
-
-/**
- * Assert that a user is authenticated from a Firebase callable auth context.
- *
- * @deprecated Import `assertAuthenticated` from `@donotdev/functions/shared/utils/internal/auth` instead.
- * This wrapper extracts uid from a Firebase callable auth context and delegates
- * to the canonical version.
- *
- * @param auth - Firebase callable request auth context (object with `.uid`)
- * @returns The authenticated user's uid
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export function assertAuthenticated(auth: any): string {
-  const uid = auth?.uid;
-  if (!uid) {
-    throw new Error('User must be authenticated');
-  }
-  return internalAssertAuthenticated(uid);
-}
 
 /**
  * Get user role from Firebase auth context
@@ -132,110 +105,6 @@ export function createErrorResponse(error: unknown): {
       message: 'An unexpected error occurred',
     },
   };
-}
-
-/**
- * Updates user subscription in Firebase.
- *
- * **Architecture decision — throwing stubs for billing functions:**
- * These subscription functions (`updateUserSubscription`, `getUserSubscription`,
- * `cancelUserSubscription`, `handleSubscriptionCancellation`) are intentional
- * placeholder implementations. They exist so the framework compiles and
- * type-checks out of the box, but throw at runtime to surface missing
- * integration early. Consumer apps replace them with their billing provider
- * integration (Stripe, Paddle, LemonSqueezy, etc.) via the documented
- * `shared/billing/helpers/` modules.
- *
- * C10: This was a silent no-op stub. It now throws to surface the missing
- * implementation at startup rather than silently dropping webhook events.
- * Use `updateUserSubscription` from `shared/billing/helpers/updateUserSubscription.ts`
- * (which requires an authProvider) instead.
- *
- * @deprecated Import `updateUserSubscription` from `@donotdev/functions/shared/billing/helpers/updateUserSubscription`.
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function updateUserSubscription(
-  _firebaseUid: string,
-  _subscription: any
-): Promise<void> {
-  throw new DoNotDevError(
-    'updateUserSubscription stub called — import from shared/billing/helpers/updateUserSubscription.ts and supply an authProvider',
-    'unimplemented'
-  );
-}
-
-/**
- * Gets user subscription from Firebase.
- *
- * C10: This was a silent no-op stub. Now throws to surface the missing implementation.
- *
- * @deprecated Import from `@donotdev/functions/shared/billing/helpers` or implement directly using Firebase Admin SDK / Stripe API.
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function getUserSubscription(_firebaseUid: string): Promise<any> {
-  throw new DoNotDevError(
-    'getUserSubscription stub called — implement using Firebase Admin SDK or Stripe API',
-    'unimplemented'
-  );
-}
-
-/**
- * Cancels user subscription.
- *
- * C10: This was a silent no-op stub. Now throws to surface the missing implementation.
- *
- * @deprecated Import `cancelUserSubscription` from `@donotdev/functions/shared/billing/helpers/subscriptionManagement`.
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function cancelUserSubscription(
-  _firebaseUid: string,
-  _subscription: any
-): Promise<void> {
-  throw new DoNotDevError(
-    'cancelUserSubscription stub called — import from shared/billing/helpers/subscriptionManagement.ts',
-    'unimplemented'
-  );
-}
-
-/**
- * Handles subscription cancellation.
- *
- * C10: This was a silent no-op stub. Now throws to surface the missing implementation.
- *
- * @deprecated Handle via Stripe webhook events. Use `processWebhook` from `@donotdev/functions/shared/billing/webhookHandler`.
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function handleSubscriptionCancellation(
-  _firebaseUid: string,
-  _subscription: any
-): Promise<void> {
-  throw new DoNotDevError(
-    'handleSubscriptionCancellation stub called — handle via Stripe webhook events',
-    'unimplemented'
-  );
-}
-
-/**
- * Asserts that a user has admin privileges
- * Uses role hierarchy: super > admin > user > guest
- *
- * @deprecated Import `assertAdmin` from `@donotdev/functions/shared/utils/internal/auth` instead.
- * This is a thin wrapper that delegates to the canonical provider-agnostic version.
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function assertAdmin(uid: string): Promise<string> {
-  return internalAssertAdmin(uid);
 }
 
 /**

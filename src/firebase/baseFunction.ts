@@ -23,7 +23,8 @@ import type { UserRole } from '@donotdev/core/server';
 
 import { FUNCTION_CONFIG } from './config/constants.js';
 import { handleError, DoNotDevError } from '../shared/errorHandling.js';
-import { assertAuthenticated, getUserRole } from '../shared/utils.js';
+import { getUserRole } from '../shared/utils.js';
+import { assertAuthenticated } from '../shared/utils/internal/auth.js';
 
 // Optional monitoring imports - only used when enabled
 // Lazy loaded to avoid unnecessary Firestore operations
@@ -236,7 +237,7 @@ export function createBaseFunction<TRequest, TResponse>(
           uid = request.auth?.uid || 'guest';
         } else {
           // Non-guest access: require authentication
-          uid = assertAuthenticated(request.auth);
+          uid = assertAuthenticated(request.auth?.uid);
 
           // Verify user has required role level
           if (!hasRoleAccess(userRole, requiredRole)) {
