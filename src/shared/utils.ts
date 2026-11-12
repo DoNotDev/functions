@@ -33,7 +33,9 @@ export { DoNotDevError };
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-export function getUserRole(auth: any): UserRole {
+export function getUserRole(
+  auth: { uid?: string; token?: Record<string, unknown> } | null | undefined
+): UserRole {
   if (!auth?.uid) return 'guest';
 
   // Check role claim (standard pattern: auth.token.role = 'admin' | 'super' | etc.)
@@ -74,7 +76,7 @@ export function createErrorResponse(error: unknown): {
   error: {
     code: string;
     message: string;
-    details?: any;
+    details?: Record<string, unknown>;
   };
 } {
   if (error instanceof DoNotDevError) {
@@ -114,7 +116,10 @@ export function createErrorResponse(error: unknown): {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-export function validateDocument(data: any, schema?: any): void {
+export function validateDocument(
+  data: unknown,
+  schema?: v.GenericSchema
+): void {
   if (!data || typeof data !== 'object') {
     throw new Error('Invalid document data');
   }
@@ -127,12 +132,12 @@ export function validateDocument(data: any, schema?: any): void {
   if (schema) {
     try {
       v.parse(schema, data);
-    } catch (error: any) {
-      if (error?.issues) {
+    } catch (error) {
+      if (v.isValiError(error)) {
         const messages = error.issues
           .map(
-            (issue: v.BaseIssue<unknown>) =>
-              `${issue.path?.map((p: any) => p.key).join('.') || 'root'}: ${issue.message}`
+            (issue) =>
+              `${issue.path?.map((p) => p.key).join('.') || 'root'}: ${issue.message}`
           )
           .join('; ');
         throw new DoNotDevError(

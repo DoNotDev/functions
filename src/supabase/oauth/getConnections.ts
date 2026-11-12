@@ -58,7 +58,7 @@ export function createGetConnections() {
         throw new Error(`Failed to get connections: ${error.message}`);
       }
 
-      const connections = (rows || []).map((row: any) => {
+      const connections = (rows || []).map((row) => {
         const isExpired = row.credentials?.expiresAt
           ? row.credentials.expiresAt < Math.floor(Date.now() / 1000)
           : false;

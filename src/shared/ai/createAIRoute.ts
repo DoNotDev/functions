@@ -28,6 +28,7 @@ import type {
 import { AI_MODELS, validateAIChatRequest } from '@donotdev/core/server';
 
 import { calculateCost } from './costTracker.js';
+import { getDenoEnv } from '../denoEnv.js';
 
 // =============================================================================
 // Types
@@ -395,7 +396,7 @@ function jsonError(message: string, status: number): Response {
 
 function getEnv(name: string): string | undefined {
   if (typeof globalThis !== 'undefined' && 'Deno' in globalThis) {
-    return (globalThis as any).Deno?.env?.get(name);
+    return getDenoEnv()?.get(name);
   }
   return typeof process !== 'undefined' ? process.env[name] : undefined;
 }

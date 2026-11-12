@@ -54,7 +54,7 @@ export function validateCheckoutUrl(url: string, name: string): void {
  * Length limits are checked on the final metadata ({@link assertStripeMetadata}).
  */
 export function sanitizeMetadata(
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 ): Record<string, string> {
   const sanitized: Record<string, string> = {};
 
@@ -184,6 +184,11 @@ export function assertResolvedOrder(
         `Line '${line.productId}': quantity must be a positive integer, got ${line.quantity}`
       );
     }
+    if (line.taxCode !== undefined && !STRIPE_TAX_CODE.test(line.taxCode)) {
+      throw new Error(
+        `Line '${line.productId}': taxCode must be a Stripe tax code (txcd_ + 8 digits), got '${line.taxCode}'`
+      );
+    }
   }
 }
 
@@ -194,6 +199,12 @@ export const CHECKOUT_EXPIRY_WINDOW = { minSeconds: 30 * 60, maxSeconds: 24 * 60
 const MAX_INVOICE_FOOTER_LENGTH = 5000;
 
 const ORDER_PAYMENT_METHOD_TYPES = ['card', 'sepa_debit'] as const;
+
+/** Stripe Customer ID shape. */
+const STRIPE_CUSTOMER_ID = /^cus_[A-Za-z0-9]+$/;
+
+/** Stripe tax code shape (https://docs.stripe.com/tax/tax-codes), e.g. `txcd_92010001`. */
+const STRIPE_TAX_CODE = /^txcd_\d{8}$/;
 
 /**
  * Validate per-order session options returned by `resolveLineItems`.
@@ -212,7 +223,13 @@ export function assertResolvedOrderSession(
   configKey: string,
   nowSeconds: number = Math.floor(Date.now() / 1000)
 ): void {
-  const { taxRateIds, paymentMethodTypes, expiresAt, invoiceFooter } = session;
+  const { taxRateIds, paymentMethodTypes, expiresAt, invoiceFooter, customerId } =
+    session;
+  if (customerId !== undefined && !STRIPE_CUSTOMER_ID.test(customerId)) {
+    throw new Error(
+      `resolveLineItems for '${configKey}': session.customerId must be a Stripe Customer ID (cus_...), got '${customerId}'`
+    );
+  }
   if (taxRateIds && taxRateIds.some((id) => typeof id !== 'string' || id.length === 0)) {
     throw new Error(
       `resolveLineItems for '${configKey}': session.taxRateIds must be non-empty strings`

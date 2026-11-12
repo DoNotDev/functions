@@ -57,6 +57,7 @@ export const StripeValidationSchemas = {
 export interface ValidationResult {
   isValid: boolean;
   errors: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   data?: any;
 }
 
@@ -67,6 +68,7 @@ export interface ValidationResult {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export function validateWebhookEvent(data: any): ValidationResult {
   try {
     const validatedData = v.parse(StripeValidationSchemas.webhookEvent, data);
@@ -76,16 +78,9 @@ export function validateWebhookEvent(data: any): ValidationResult {
       errors: [],
     };
   } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'issues' in error &&
-      ((error instanceof Error && error.name === 'ValiError') ||
-        (error as any).name === 'ValiError')
-    ) {
-      const valiError = error as any;
-      const errors = valiError.issues.map(
-        (err: v.BaseIssue<unknown>) =>
+    if (v.isValiError(error)) {
+      const errors = error.issues.map(
+        (err) =>
           `${err.path?.map((p) => p.key).join('.') || ''}: ${err.message}`
       );
       logger.warn('Webhook event validation failed', { errors, data });
@@ -108,6 +103,7 @@ export function validateWebhookEvent(data: any): ValidationResult {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export function validatePurchaseRequest(data: any): ValidationResult {
   try {
     const validatedData = v.parse(
@@ -120,16 +116,9 @@ export function validatePurchaseRequest(data: any): ValidationResult {
       errors: [],
     };
   } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'issues' in error &&
-      ((error instanceof Error && error.name === 'ValiError') ||
-        (error as any).name === 'ValiError')
-    ) {
-      const valiError = error as any;
-      const errors = valiError.issues.map(
-        (err: v.BaseIssue<unknown>) =>
+    if (v.isValiError(error)) {
+      const errors = error.issues.map(
+        (err) =>
           `${err.path?.map((p) => p.key).join('.') || ''}: ${err.message}`
       );
       logger.warn('Purchase request validation failed', { errors, data });
@@ -223,6 +212,7 @@ export function validateUrl(url: string, name: string = 'URL'): string {
  * @author AMBROISE PARK Consulting
  */
 export function validateMetadata(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   metadata: Record<string, any>
 ): Record<string, string> {
   const sanitized: Record<string, string> = {};

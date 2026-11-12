@@ -42,9 +42,8 @@ export function toISOString(date: DateValue): string {
     return date.toISOString();
   }
   if (typeof date === 'object' && date !== null && 'toDate' in date) {
-    const timestamp = date as any;
-    if (typeof timestamp.toDate === 'function') {
-      return timestamp.toDate().toISOString();
+    if (typeof date.toDate === 'function') {
+      return date.toDate().toISOString();
     }
   }
 
@@ -58,7 +57,8 @@ export function toISOString(date: DateValue): string {
   }
 
   // Fallback for any other type
-  const parsed = new Date(date as any);
+  // why: unreachable for typed callers; keeps the runtime path for untyped values (numbers, plain objects)
+  const parsed = new Date(date as unknown as string);
   if (isNaN(parsed.getTime())) {
     throw new Error('Invalid date format');
   }

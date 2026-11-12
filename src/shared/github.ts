@@ -9,6 +9,8 @@
  * @author AMBROISE PARK Consulting
  */
 
+import * as v from 'valibot';
+
 /** Configuration for authenticating with the GitHub API. */
 export interface GitHubApiConfig {
   accessToken: string;
@@ -50,6 +52,12 @@ export interface GitHubApiError {
   documentation_url?: string;
   status?: number;
 }
+
+/** Error body shape returned by the GitHub API on non-2xx responses (untrusted). */
+const GitHubErrorBodySchema = v.object({
+  message: v.optional(v.string()),
+  documentation_url: v.optional(v.string()),
+});
 
 /** Pattern for valid GitHub usernames, org names, repo names, and team slugs */
 const SAFE_GITHUB_NAME = /^[a-zA-Z0-9_.-]+$/;
@@ -158,8 +166,8 @@ export class GitHubApiService {
         method: 'GET',
       });
       return true;
-    } catch (error: any) {
-      if (error.message?.includes('404')) {
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('404')) {
         return false;
       }
       console.error('Failed to check collaborator status:', error);
@@ -276,8 +284,8 @@ export class GitHubApiService {
         }
       );
       return true;
-    } catch (error: any) {
-      if (error.message?.includes('404')) {
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('404')) {
         return false;
       }
       console.error('Failed to check team membership:', error);
@@ -310,7 +318,9 @@ export class GitHubApiService {
     });
 
     if (!response.ok) {
-      const errorData = (await response.json().catch(() => ({}))) as any;
+      const errorBody: unknown = await response.json().catch(() => ({}));
+      const parsed = v.safeParse(GitHubErrorBodySchema, errorBody);
+      const errorData = parsed.success ? parsed.output : {};
       const error: GitHubApiError = {
         message:
           errorData.message ||

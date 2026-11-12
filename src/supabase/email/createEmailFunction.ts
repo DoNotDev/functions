@@ -16,6 +16,7 @@ import { SendEmailRequestSchema } from '@donotdev/core/server';
 import { handleEmailRequest } from '../../shared/email/index.js';
 import { createResendProvider } from '../../shared/email/resendProvider.js';
 import { createSupabaseHandler } from '../baseFunction.js';
+import { getDenoEnv } from '../../shared/denoEnv.js';
 
 /**
  * Create a Supabase Edge Function handler for sending emails.
@@ -66,7 +67,7 @@ export function createEmailFunction(config: EmailRouteConfig) {
 
 function getEnv(name: string): string | undefined {
   if (typeof globalThis !== 'undefined' && 'Deno' in globalThis) {
-    return (globalThis as any).Deno?.env?.get(name);
+    return getDenoEnv()?.get(name);
   }
   return typeof process !== 'undefined' ? process.env[name] : undefined;
 }

@@ -26,6 +26,7 @@ import {
   checkRateLimitWithFirestore,
   DEFAULT_RATE_LIMITS,
 } from '../shared/utils/internal/rateLimiter.js';
+import type { RateLimitConfig } from '../shared/utils/internal/rateLimiter.js';
 import { checkRateLimitWithPostgres } from '../supabase/utils/rateLimiter.js';
 
 /**
@@ -85,8 +86,11 @@ export function createVercelBaseFunction<TRequest, TResponse>(
 
       // Rate limiting
       const rateLimitKey = `${operation}_${uid}`;
+      const rateLimitsByOperation: Partial<
+        Record<string, RateLimitConfig>
+      > = DEFAULT_RATE_LIMITS;
       const rateLimitConfig =
-        (DEFAULT_RATE_LIMITS as any)[operation] || DEFAULT_RATE_LIMITS.api;
+        rateLimitsByOperation[operation] || DEFAULT_RATE_LIMITS.api;
       // Rate-limit storage follows the auth backend (Postgres for Supabase)
       const rateLimitResult =
         provider === 'supabase'

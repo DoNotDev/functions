@@ -151,6 +151,7 @@ async function grantGitHubAccessInternal(
  */
 export const grantGitHubAccess: CallableFunction<
   GrantGitHubAccessRequest,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   Promise<any>
 > = onCall<GrantGitHubAccessRequest>(
   OAUTH_CONFIG,
@@ -282,6 +283,7 @@ async function revokeGitHubAccessInternal(
  */
 export const revokeGitHubAccess: CallableFunction<
   RevokeGitHubAccessRequest,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   Promise<any>
 > = onCall<RevokeGitHubAccessRequest>(
   OAUTH_CONFIG,
@@ -393,6 +395,7 @@ async function checkGitHubAccessInternal(
  */
 export const checkGitHubAccess: CallableFunction<
   CheckGitHubAccessRequest,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   Promise<any>
 > = onCall<CheckGitHubAccessRequest>(
   OAUTH_CONFIG,

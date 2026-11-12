@@ -10,7 +10,7 @@
  * @author AMBROISE PARK Consulting
  */
 
-import type { EntityHookError } from '@donotdev/core/server';
+import type { EntityHookError, ErrorCode } from '@donotdev/core/server';
 import { DoNotDevError } from '@donotdev/core/server';
 
 // Re-export DoNotDevError so existing imports from this module continue to work
@@ -40,12 +40,12 @@ export function handleError(error: unknown): never {
   }
 
   // Error classification logic (same for all platforms)
-  let code: string;
+  let code: ErrorCode;
   let message: string;
-  let details: any;
+  let details: unknown;
 
   if (error instanceof DoNotDevError) {
-    code = error.code as string;
+    code = error.code;
     message = error.message;
     details = error.details;
   } else if (
@@ -53,17 +53,17 @@ export function handleError(error: unknown): never {
     typeof error === 'object' &&
     'issues' in error &&
     ((error instanceof Error && error.name === 'ValiError') ||
-      (error as any).name === 'ValiError')
+      ('name' in error && error.name === 'ValiError'))
   ) {
     code = 'invalid-argument';
     message = 'Validation failed';
-    details = { validationErrors: (error as any).issues };
+    details = { validationErrors: error.issues };
   } else if (
     error &&
     typeof error === 'object' &&
     'type' in error &&
     ((error instanceof Error && error.name === 'EntityHookError') ||
-      (error as any).name === 'EntityHookError')
+      ('name' in error && error.name === 'EntityHookError'))
   ) {
     const entityError = error as EntityHookError;
     switch (entityError.type) {
@@ -104,7 +104,7 @@ export function handleError(error: unknown): never {
 
   throw new DoNotDevError(
     message,
-    code as any,
+    code,
     details ? { details } : undefined
   );
 }

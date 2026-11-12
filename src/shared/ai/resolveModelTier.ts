@@ -13,6 +13,7 @@
 
 import { AI_TIERS } from '@donotdev/core/server';
 import type { AITierId } from '@donotdev/core/server';
+import { getDenoEnv } from '../denoEnv.js';
 
 // =============================================================================
 // Env helper (Deno + Node cross-runtime)
@@ -20,7 +21,7 @@ import type { AITierId } from '@donotdev/core/server';
 
 function getEnv(name: string): string | undefined {
   if (typeof globalThis !== 'undefined' && 'Deno' in globalThis) {
-    return (globalThis as any).Deno?.env?.get(name);
+    return getDenoEnv()?.get(name);
   }
   return typeof process !== 'undefined' ? process.env[name] : undefined;
 }

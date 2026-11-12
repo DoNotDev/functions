@@ -50,12 +50,14 @@ export type SetCustomClaimsRequest = v.InferOutput<
 >;
 export type SetCustomClaimsResponse = {
   success: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   customClaims: Record<string, any>;
 };
 
 export interface SetCustomClaimsOptions {
   /** Explicit allowlist of claim keys users may set on themselves. Required. */
   allowedClaimKeys: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>;
 }
 
@@ -132,6 +134,7 @@ function createSetCustomClaimsLogic(allowedKeys: Set<string>) {
       if (alreadyProcessed) {
         return existingResult as {
           success: boolean;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: not yet narrowed (any-audit 2026-11-11 follow-up)
           customClaims: Record<string, any>;
         };
       }

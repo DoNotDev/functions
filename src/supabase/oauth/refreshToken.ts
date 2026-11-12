@@ -94,6 +94,7 @@ export function createRefreshToken() {
         throw new Error(`Failed to refresh token: ${response.status}`);
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: untrusted OAuth token response; needs a valibot schema (strict vs loose expires_in is an open owner decision)
       const tokenData = (await response.json()) as any;
 
       const credentials = {

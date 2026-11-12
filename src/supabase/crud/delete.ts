@@ -9,6 +9,7 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as v from 'valibot';
 
 import type { UserRole } from '@donotdev/core/server';
@@ -47,7 +48,7 @@ export interface ReferenceMetadata {
  * @returns Array of reference information
  */
 async function findReferences(
-  supabaseAdmin: any,
+  supabaseAdmin: SupabaseClient,
   collection: string,
   docId: string,
   referenceMetadata?: ReferenceMetadata

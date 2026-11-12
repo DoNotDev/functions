@@ -111,6 +111,7 @@ async function grantGitHubAccessLogic(
  * @author AMBROISE PARK Consulting
  */
 const grantGitHubAccess = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ) => {
   const schema = customSchema || grantGitHubAccessSchema;

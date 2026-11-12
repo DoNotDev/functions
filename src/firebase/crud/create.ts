@@ -30,6 +30,7 @@ import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
 
 export type CreateEntityRequest = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   payload: Record<string, any>;
   idempotencyKey?: string;
 };
@@ -39,7 +40,11 @@ export type CreateEntityRequest = {
  */
 type UniqueKeyCheckResult =
   | { found: false }
-  | { found: true; existingDoc: Record<string, any>; findOrCreate: boolean };
+  | {
+      found: true;
+      existingDoc: Record<string, unknown>;
+      findOrCreate: boolean;
+    };
 
 /**
  * Checks unique key constraints against existing documents
@@ -67,9 +72,9 @@ function normalizeValue(value: unknown): unknown {
  * Returns a new object with normalized values for unique key fields
  */
 function normalizePayloadForUniqueKeys(
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   uniqueKeys: UniqueKeyDefinition[]
-): Record<string, any> {
+): Record<string, unknown> {
   const normalized = { ...payload };
   for (const uniqueKey of uniqueKeys) {
     for (const field of uniqueKey.fields) {
@@ -83,7 +88,7 @@ function normalizePayloadForUniqueKeys(
 
 async function checkUniqueKeys(
   collection: string,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   uniqueKeys: UniqueKeyDefinition[],
   isDraft: boolean
 ): Promise<UniqueKeyCheckResult> {
@@ -148,12 +153,16 @@ async function checkUniqueKeys(
  */
 function createEntityLogicFactory(
   collection: string,
-  createDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
-  draftDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
+  createDocumentSchema: v.GenericSchema,
+  draftDocumentSchema: v.GenericSchema
 ) {
   return async function createEntityLogic(
     data: CreateEntityRequest,
-    context: { uid: string; userRole: UserRole; request: CallableRequest<any> }
+    context: {
+      uid: string;
+      userRole: UserRole;
+      request: CallableRequest<CreateEntityRequest>;
+    }
   ) {
     const { payload, idempotencyKey } = data;
     const { uid } = context;
@@ -304,15 +313,19 @@ function createEntityLogicFactory(
  */
 export const createEntity = (
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   createDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   draftDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 ): CallableFunction<CreateEntityRequest, Promise<any>> => {
   const requestSchema =
     customSchema ||
     v.object({
-      payload: v.record(v.string(), v.any()),
+      payload: v.record(v.string(), v.unknown()),
       idempotencyKey: v.optional(v.string()),
     });
 

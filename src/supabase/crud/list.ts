@@ -31,6 +31,7 @@ import {
 
 import { DoNotDevError } from '../../shared/utils.js';
 import { createSupabaseHandler } from '../baseFunction.js';
+import type { Filterable } from './entityStore.js';
 
 /** Field mapper: app (camelCase) ↔ backend (snake_case). Single boundary for list handler. */
 const mapper = defaultFieldMapper;
@@ -44,6 +45,7 @@ function toBackendColumn(field: unknown): string {
 
 /** Request payload for listing entities with filtering, sorting, and pagination. */
 export interface ListEntityRequest {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported request type; consumers reading where values would get unknown (breaking)
   where?: Array<[string, any, any]>;
   orderBy?: Array<[string, 'asc' | 'desc']>;
   limit?: number;
@@ -58,7 +60,7 @@ export interface ListEntityRequest {
 /**
  * Encode cursor for keyset pagination
  */
-function encodeCursor(id: string, orderBy: Record<string, any>): string {
+function encodeCursor(id: unknown, orderBy: Record<string, unknown>): string {
   const cursor = { id, orderBy };
   return Buffer.from(JSON.stringify(cursor)).toString('base64');
 }
@@ -68,7 +70,7 @@ function encodeCursor(id: string, orderBy: Record<string, any>): string {
  */
 function decodeCursor(cursor: string): {
   id: string;
-  orderBy: Record<string, any>;
+  orderBy: Record<string, unknown>;
 } {
   try {
     const parsed = JSON.parse(Buffer.from(cursor, 'base64').toString());
@@ -95,12 +97,12 @@ function decodeCursor(cursor: string): {
 const SAFE_FIELD_NAME = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 /** Apply operator; column must already be backend (snake_case) name. */
-function applyOperator(
-  query: any,
+function applyOperator<Q extends Filterable>(
+  query: Q,
   column: string,
   operator: string,
-  value: any
-): any {
+  value: unknown
+): Q {
   if (!SAFE_FIELD_NAME.test(column)) {
     throw new DoNotDevError(
       `Invalid field name: '${column}'`,
@@ -133,10 +135,10 @@ function applyOperator(
   }
 }
 
-function applyPublicCondition(
-  query: any,
+function applyPublicCondition<Q extends Filterable>(
+  query: Q,
   publicCondition: EntityOwnershipPublicCondition[]
-): any {
+): Q {
   let q = query;
   for (const c of publicCondition) {
     q = applyOperator(q, toBackendColumn(c.field), c.op, c.value);
@@ -157,6 +159,7 @@ function applyPublicCondition(
  */
 export function createSupabaseListEntities(
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole,
   listFields?: string[],
@@ -164,7 +167,7 @@ export function createSupabaseListEntities(
   isListCard?: boolean
 ) {
   const requestSchema = v.object({
-    where: v.optional(v.array(v.tuple([v.string(), v.any(), v.any()]))),
+    where: v.optional(v.array(v.tuple([v.string(), v.unknown(), v.unknown()]))),
     orderBy: v.optional(
       v.array(
         v.tuple([
@@ -339,7 +342,8 @@ export function createSupabaseListEntities(
         );
       }
 
-      let items = (rows || []) as Record<string, any>[];
+      // why: non-literal select string types rows as GenericStringError[]; rows are plain objects
+      let items = (rows || []) as unknown as Record<string, unknown>[];
 
       // Filter out cursor item for keyset pagination.
       // Note: items are still raw DB rows here (pre-normalization), so mapper.toBackendField
@@ -362,7 +366,9 @@ export function createSupabaseListEntities(
       }
 
       // Helper: Check if value is a Picture object
-      const isPictureObject = (value: any): boolean => {
+      const isPictureObject = (
+        value: unknown
+      ): value is { thumbUrl: unknown; fullUrl: unknown } => {
         return (
           typeof value === 'object' &&
           value !== null &&
@@ -372,7 +378,7 @@ export function createSupabaseListEntities(
       };
 
       // Helper: Optimize picture fields for listCard (only return first picture's thumbUrl)
-      const optimizePictureField = (value: any): any => {
+      const optimizePictureField = (value: unknown): unknown => {
         if (Array.isArray(value) && value.length > 0) {
           const firstPicture = value[0];
           if (isPictureObject(firstPicture)) {
@@ -402,7 +408,7 @@ export function createSupabaseListEntities(
       const filteredItems = items.map((row) => {
         const camelRow = entityMapper.fromBackendRow(row) as Record<
           string,
-          any
+          unknown
         >;
         const visibleData = filterVisibleFields(
           camelRow,
@@ -415,7 +421,7 @@ export function createSupabaseListEntities(
 
         // If listFields specified, filter to only those fields (plus id always)
         if (safeListFields && safeListFields.length > 0) {
-          const filtered: Record<string, any> = { id: camelRow.id };
+          const filtered: Record<string, unknown> = { id: camelRow.id };
           for (const field of safeListFields) {
             if (field in visibleData) {
               const value = visibleData[field];
@@ -426,7 +432,7 @@ export function createSupabaseListEntities(
         }
 
         // No listFields restriction, return all visible fields (optimize pictures)
-        const optimizedData: Record<string, any> = { id: camelRow.id };
+        const optimizedData: Record<string, unknown> = { id: camelRow.id };
         for (const [key, value] of Object.entries(visibleData)) {
           optimizedData[key] = optimizePictureField(value);
         }
@@ -442,7 +448,7 @@ export function createSupabaseListEntities(
         if (useKeysetPagination && orderBy.length > 0) {
           // Create cursor from last item's orderBy field + id
           const firstOrderField = orderBy[0][0];
-          const orderByValue: Record<string, any> = {};
+          const orderByValue: Record<string, unknown> = {};
           orderByValue[firstOrderField] = lastItem[firstOrderField];
           lastVisible = encodeCursor(lastItem.id, orderByValue);
         } else if (useKeysetPagination) {

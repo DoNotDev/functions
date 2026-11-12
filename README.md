@@ -473,7 +473,7 @@ const tierMapping: Record<string, SubscriptionTier> = {
 
 ```bash
 # Run all tests
-bun test
+dn test
 
 # Test specific platform
 bun run test:firebase

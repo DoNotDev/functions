@@ -122,6 +122,7 @@ export function createExchangeToken() {
         );
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: untrusted OAuth token response; needs a valibot schema (strict vs loose expires_in is an open owner decision)
       const tokenData = (await tokenResponse.json()) as any;
 
       // Format credentials

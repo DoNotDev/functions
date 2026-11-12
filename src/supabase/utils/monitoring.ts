@@ -19,6 +19,7 @@ export interface OperationMetrics {
   userId?: string;
   status: 'success' | 'failed' | 'pending';
   durationMs?: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   metadata?: Record<string, any>;
   errorCode?: string;
   errorMessage?: string;

@@ -14,7 +14,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
 import type { UpdateEntityData } from '@donotdev/core/server';
 
-import { handleError } from '../../../shared/errorHandling.js';
+import { DoNotDevError, handleError } from '../../../shared/errorHandling.js';
 import {
   prepareForFirestore,
   transformFirestoreData,
@@ -38,6 +38,7 @@ export default async function handler(
     // C1: verify JWT — previously only checked header presence.
     const uid = await verifyAuthToken(req);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: the client supplies the validation schema (known limitation W22); typing needs a server-side entity registry
     const { schema, id, payload } = req.body as UpdateEntityData<any>;
 
     if (!schema || !id || !payload) {
@@ -70,7 +71,7 @@ export default async function handler(
     // Validate the document against the schema
     // Skip validation for drafts - required fields can be incomplete
     if (!isDraft) {
-      validateDocument(mergedData as Record<string, any>, schema);
+      validateDocument(mergedData, schema);
     }
 
     // Prepare the document for Firestore and add metadata
@@ -102,7 +103,9 @@ export default async function handler(
   } catch (error) {
     try {
       handleError(error);
-    } catch (handledError: any) {
+    } catch (handledError) {
+      // handleError always throws DoNotDevError; narrow for typed access
+      if (!(handledError instanceof DoNotDevError)) throw handledError;
       const status = handledError.code === 'invalid-argument' ? 400 : 500;
       return res
         .status(status)

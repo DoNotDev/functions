@@ -60,12 +60,13 @@ async function exchangeTokenLogic(
   const { provider, purpose, code, redirectUri, codeVerifier, instance } = data;
 
   // Get provider endpoints
-  let tokenUrl = OAUTH_PARTNERS[provider]?.endpoints?.tokenUrl;
+  let tokenUrl: string | undefined =
+    OAUTH_PARTNERS[provider]?.endpoints?.tokenUrl;
 
   // Special handling for Mastodon instances
   if (provider === 'mastodon' && instance) {
     validateInstanceUrl(instance);
-    tokenUrl = `${instance.replace(/\/$/, '')}/oauth/token` as any;
+    tokenUrl = `${instance.replace(/\/$/, '')}/oauth/token`;
   }
 
   if (!tokenUrl) {
@@ -150,6 +151,7 @@ async function exchangeTokenLogic(
   }
 
   // Parse response
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: untrusted OAuth token response; needs a valibot schema (strict vs loose expires_in is an open owner decision)
   const tokenData = (await response.json()) as any;
 
   // Validate required fields
@@ -180,6 +182,7 @@ async function exchangeTokenLogic(
  * Base function handles all common concerns automatically
  */
 const exchangeToken = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ) => {
   const schema = customSchema || exchangeTokenSchema;

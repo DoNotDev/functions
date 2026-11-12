@@ -23,6 +23,7 @@ export { createSupabaseAuthProvider } from './helpers/authProvider.js';
 
 // Auth
 export { createDeleteAccount } from './auth/deleteAccount.js';
+export type { DeleteAccountOptions } from './auth/deleteAccount.js';
 export { createSetCustomClaims } from './auth/setCustomClaims.js';
 export type { SetCustomClaimsOptions } from './auth/setCustomClaims.js';
 export { createGetCustomClaims } from './auth/getCustomClaims.js';

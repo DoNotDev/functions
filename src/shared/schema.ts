@@ -15,11 +15,7 @@ import type * as v from 'valibot';
 type Visibility = 'guest' | 'user' | 'admin' | 'technical' | 'hidden' | 'owner';
 
 // Define a type for the custom visibility property we might add to Valibot schemas
-interface ValibotSchemaWithVisibility extends v.BaseSchema<
-  unknown,
-  any,
-  v.BaseIssue<unknown>
-> {
+interface ValibotSchemaWithVisibility extends v.GenericSchema {
   visibility?: Visibility;
 }
 
@@ -34,7 +30,7 @@ interface ValibotSchemaWithVisibility extends v.BaseSchema<
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-function getFieldVisibility(field: any): Visibility | undefined {
+function getFieldVisibility(field: unknown): Visibility | undefined {
   // Check if the field has visibility property
   if (field && typeof field === 'object' && 'visibility' in field) {
     return (field as ValibotSchemaWithVisibility).visibility;
@@ -119,6 +115,7 @@ export function isFieldVisible(
  * @author AMBROISE PARK Consulting
  */
 export function getVisibleFields(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   schema: any, // Accept any Valibot type, but process only objects
   isAdmin: boolean
 ): string[] {
@@ -132,10 +129,7 @@ export function getVisibleFields(
   }
 
   // Extract the entries (field definitions) from the schema
-  const entries = schema.entries as Record<
-    string,
-    v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
-  >;
+  const entries: Record<string, unknown> = schema.entries;
   const visibleFieldNames: string[] = [];
 
   // Iterate over each field defined in the schema's entries
@@ -164,8 +158,10 @@ export function getVisibleFields(
  * @returns {Partial<T>} A new object containing only the fields visible to the user,
  * or an empty object if input data is null/undefined.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: interface-typed records have no implicit index signature; Record<string, unknown> would reject them
 export function filterVisibleFields<T extends Record<string, any>>(
   data: T | null | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   schema: any, // Use any for broader compatibility
   isAdmin: boolean
 ): Partial<T> {

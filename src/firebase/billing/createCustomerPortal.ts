@@ -56,10 +56,12 @@ async function createCustomerPortalLogic(
   // Get customer ID from user claims
   const user = await getFirebaseAdminAuth().getUser(userId);
   // ... (rest of logic)
-  const currentClaims = (user.customClaims || {}) as any;
-  const customerId =
-    currentClaims.subscription?.customerId ||
-    user.customClaims?.stripeCustomerId;
+  const currentClaims: Record<string, unknown> = user.customClaims || {};
+  const subscription = currentClaims.subscription as
+    | { customerId?: string }
+    | undefined;
+  const customerId: string | undefined =
+    subscription?.customerId || user.customClaims?.stripeCustomerId;
 
   if (!customerId) {
     throw handleError(new Error('No Stripe customer ID found for user'));

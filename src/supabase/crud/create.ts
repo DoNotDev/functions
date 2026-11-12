@@ -9,6 +9,7 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as v from 'valibot';
 
 import { filterVisibleFields } from '@donotdev/core/server';
@@ -24,6 +25,7 @@ const mapper = defaultFieldMapper;
 
 /** Request payload for creating an entity with optional idempotency. */
 export type CreateEntityRequest = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   payload: Record<string, any>;
   idempotencyKey?: string;
 };
@@ -42,9 +44,9 @@ function normalizeValue(value: unknown): unknown {
  * Normalize unique key fields in payload to lowercase (for strings)
  */
 function normalizePayloadForUniqueKeys(
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   uniqueKeys: UniqueKeyDefinition[]
-): Record<string, any> {
+): Record<string, unknown> {
   const normalized = { ...payload };
   for (const uniqueKey of uniqueKeys) {
     for (const field of uniqueKey.fields) {
@@ -61,13 +63,13 @@ function normalizePayloadForUniqueKeys(
  */
 async function checkUniqueKeys(
   collection: string,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   uniqueKeys: UniqueKeyDefinition[],
   isDraft: boolean,
-  supabaseAdmin: any
+  supabaseAdmin: SupabaseClient
 ): Promise<
   | { found: false }
-  | { found: true; existingDoc: Record<string, any>; findOrCreate: boolean }
+  | { found: true; existingDoc: Record<string, unknown>; findOrCreate: boolean }
 > {
   for (const uniqueKey of uniqueKeys) {
     // Skip validation for drafts only if explicitly opted in
@@ -92,7 +94,7 @@ async function checkUniqueKeys(
     if (!error && existing && existing.length > 0) {
       const existingDoc = mapper.fromBackendRow(existing[0]) as Record<
         string,
-        any
+        unknown
       >;
 
       if (uniqueKey.findOrCreate) {
@@ -127,12 +129,14 @@ async function checkUniqueKeys(
  */
 export function createSupabaseCreateEntity(
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   createDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   draftDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole
 ) {
   const requestSchema = v.object({
-    payload: v.record(v.string(), v.any()),
+    payload: v.record(v.string(), v.unknown()),
     idempotencyKey: v.optional(v.string()),
   });
 
@@ -145,7 +149,7 @@ export function createSupabaseCreateEntity(
 
       // Idempotency check if key provided
       if (idempotencyKey) {
-        const cachedResult = await checkIdempotency<any>(
+        const cachedResult = await checkIdempotency<unknown>(
           supabaseAdmin,
           idempotencyKey,
           'create'
@@ -233,7 +237,7 @@ export function createSupabaseCreateEntity(
 
       const result = mapper.fromBackendRow(
         inserted as Record<string, unknown>
-      ) as Record<string, any>;
+      ) as Record<string, unknown>;
 
       // Store result for idempotency if key provided
       if (idempotencyKey) {

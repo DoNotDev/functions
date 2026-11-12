@@ -40,6 +40,7 @@ export type GetEntityRequest = { id: string };
  */
 export function createSupabaseGetEntity(
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole,
   ownership?: EntityOwnershipConfig
@@ -84,7 +85,7 @@ export function createSupabaseGetEntity(
           : defaultFieldMapper;
       const normalized = entityMapper.fromBackendRow(row) as Record<
         string,
-        any
+        unknown
       >;
 
       const visibilityOptions =

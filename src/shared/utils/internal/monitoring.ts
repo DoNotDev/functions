@@ -35,6 +35,7 @@ export interface PaymentMetrics {
   currency?: string;
   status: 'success' | 'failed' | 'pending';
   timestamp: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   metadata?: Record<string, any>;
 }
 
@@ -109,7 +110,7 @@ export async function checkPaymentFailureRate(
 
     const totalPayments = recentMetrics.size;
     const failedPayments = recentMetrics.docs.filter(
-      (doc: any) => doc.data().status === 'failed'
+      (doc) => doc.data().status === 'failed'
     ).length;
 
     const failureRate = (failedPayments / totalPayments) * 100;
@@ -157,7 +158,7 @@ export async function checkPaymentVolume(
       .get();
 
     let totalVolume = 0;
-    todayMetrics.docs.forEach((doc: any) => {
+    todayMetrics.docs.forEach((doc) => {
       const data = doc.data();
       if (data.amount && data.currency === 'usd') {
         totalVolume += data.amount / 100; // Convert cents to dollars
@@ -284,7 +285,7 @@ export async function getPaymentMetricsSummary(
     let failedPayments = 0;
     let totalVolume = 0;
 
-    metrics.docs.forEach((doc: any) => {
+    metrics.docs.forEach((doc) => {
       const data = doc.data();
       totalPayments++;
 
@@ -349,7 +350,7 @@ export async function cleanupOldMetrics(
 
     if (!oldMetrics.empty) {
       const batch = db.batch();
-      oldMetrics.docs.forEach((doc: any) => batch.delete(doc.ref));
+      oldMetrics.docs.forEach((doc) => batch.delete(doc.ref));
       await batch.commit();
     }
 
@@ -365,7 +366,7 @@ export async function cleanupOldMetrics(
 
     if (!oldAlerts.empty) {
       const batch = db.batch();
-      oldAlerts.docs.forEach((doc: any) => batch.delete(doc.ref));
+      oldAlerts.docs.forEach((doc) => batch.delete(doc.ref));
       await batch.commit();
     }
 

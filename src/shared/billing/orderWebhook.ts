@@ -3,7 +3,8 @@
 /**
  * @fileoverview StripeOrder webhook handling
  * @description Maps Checkout Session events of one-time, multi-line orders to the
- * app's order hooks (`onOrderPaid`, `onOrderPaymentFailed`, `onOrderExpired`).
+ * app's order hooks (`onOrderPaid`, `onOrderPaymentFailed`, `onOrderExpired`), and
+ * `customer.tax_id.updated` to `onTaxIdUpdated`.
  * Hook errors propagate: the webhook answers non-2xx and Stripe retries.
  *
  * @version 0.2.0
@@ -18,7 +19,9 @@ import type {
   CheckoutSessionSnapshot,
   OrderHookContext,
   PaidLineItem,
+  StripeBackConfig,
   StripeOrderBackItem,
+  TaxIdSnapshot,
 } from '@donotdev/core/server';
 
 import { logger } from '../logger.js';
@@ -265,5 +268,70 @@ export async function handleOrderSessionEvent(
       return;
     default:
       return;
+  }
+}
+
+/**
+ * Map a Stripe TaxId to the provider-neutral snapshot given to `onTaxIdUpdated`.
+ *
+ * @param taxId - TaxId from a `customer.tax_id.updated` event
+ * @returns Snapshot
+ *
+ * @version 0.2.0
+ * @since 0.2.3
+ * @author AMBROISE PARK Consulting
+ */
+export function toTaxIdSnapshot(taxId: Stripe.TaxId): TaxIdSnapshot {
+  return {
+    id: taxId.id,
+    customerId: idOf(taxId.customer),
+    type: taxId.type,
+    value: taxId.value,
+    country: taxId.country,
+    verification: taxId.verification && {
+      status: taxId.verification.status,
+      verifiedName: taxId.verification.verified_name,
+      verifiedAddress: taxId.verification.verified_address,
+    },
+  };
+}
+
+/**
+ * Handle `customer.tax_id.updated`: run `onTaxIdUpdated` of every StripeOrder item
+ * that defines it, once per distinct function. Called by `processWebhook` after
+ * signature verification and idempotency reservation (same path as order events).
+ *
+ * @param eventId - Stripe event ID
+ * @param taxId - TaxId from the event
+ * @param config - App back config
+ * @throws When a hook throws (the webhook answers non-2xx and Stripe retries)
+ *
+ * @version 0.2.0
+ * @since 0.2.3
+ * @author AMBROISE PARK Consulting
+ */
+export async function handleTaxIdUpdated(
+  eventId: string,
+  taxId: Stripe.TaxId,
+  config: StripeBackConfig
+): Promise<void> {
+  const snapshot = toTaxIdSnapshot(taxId);
+  const ran = new Set<StripeOrderBackItem['onTaxIdUpdated']>();
+  for (const [billingConfigKey, item] of Object.entries(config)) {
+    if (item.type !== 'StripeOrder' || !item.onTaxIdUpdated) continue;
+    if (ran.has(item.onTaxIdUpdated)) continue;
+    ran.add(item.onTaxIdUpdated);
+    await item.onTaxIdUpdated(snapshot, { billingConfigKey, eventId });
+    logger.info('[Webhook] Tax ID updated', {
+      taxIdId: snapshot.id,
+      status: snapshot.verification?.status ?? null,
+      billingConfigKey,
+      operation: 'tax_id_updated',
+    });
+  }
+  if (ran.size === 0) {
+    logger.debug('[Webhook] customer.tax_id.updated without onTaxIdUpdated hook', {
+      eventId,
+    });
   }
 }

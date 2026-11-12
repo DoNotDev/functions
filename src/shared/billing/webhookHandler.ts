@@ -20,7 +20,7 @@ import { handleError } from '../errorHandling.js';
 import { logger } from '../logger.js';
 import { ReservationLostError } from './idempotencyContract.js';
 import type { IdempotencyStore } from './idempotencyContract.js';
-import { handleOrderSessionEvent } from './orderWebhook.js';
+import { handleOrderSessionEvent, handleTaxIdUpdated } from './orderWebhook.js';
 import type { OrderSessionEventType } from './orderWebhook.js';
 import {
   handleInvoicePaymentSucceeded,
@@ -273,6 +273,10 @@ async function routeEvent(
 
     case 'invoice.payment_failed':
       await handlePaymentFailed(event.data.object as Stripe.Invoice, config);
+      break;
+
+    case 'customer.tax_id.updated':
+      await handleTaxIdUpdated(event.id, event.data.object, config);
       break;
 
     default:

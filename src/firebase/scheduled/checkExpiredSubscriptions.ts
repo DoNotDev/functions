@@ -108,7 +108,10 @@ export const checkExpiredSubscriptions = onSchedule(
 /**
  * Revoke expired subscription access and clean up claims
  */
-async function revokeExpiredSubscription(userId: string, subscription: any) {
+async function revokeExpiredSubscription(
+  userId: string,
+  subscription: Record<string, unknown>
+) {
   try {
     const auth = getFirebaseAdminAuth();
     const user = await auth.getUser(userId);

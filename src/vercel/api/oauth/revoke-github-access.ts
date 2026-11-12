@@ -24,6 +24,7 @@ import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ) {
   if (req.method !== 'POST') {

@@ -23,6 +23,7 @@ import { withSchemaValidation } from './schemaValidation.js';
  * @author AMBROISE PARK Consulting
  */
 export function createFirebaseCallable<TRequest, TResponse>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   config: any,
   defaultSchema: v.BaseSchema<unknown, TRequest, v.BaseIssue<unknown>>,
   handler: (
@@ -56,6 +57,7 @@ export function createFirebaseCallable<TRequest, TResponse>(
  * @author AMBROISE PARK Consulting
  */
 export function createFirebaseFunctionExports<TRequest, TResponse>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   config: any,
   defaultSchema: v.BaseSchema<unknown, TRequest, v.BaseIssue<unknown>>,
   handler: (

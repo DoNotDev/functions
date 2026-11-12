@@ -29,7 +29,10 @@ import {
 import type { BulkRequest, BulkResponse } from '@donotdev/core/server';
 
 import { executeBulk } from '../../../shared/crud/bulkCore.js';
-import { handleError } from '../../../shared/errorHandling.js';
+import {
+  DoNotDevError,
+  handleError,
+} from '../../../shared/errorHandling.js';
 import { prepareForFirestore } from '../../../shared/firebase.js';
 import { createMetadata, updateMetadata } from '../../../shared/metadata.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
@@ -199,7 +202,9 @@ export default async function handler(
   } catch (error) {
     try {
       handleError(error);
-    } catch (handledError: any) {
+    } catch (handledError) {
+      // handleError always throws DoNotDevError; narrow for typed access
+      if (!(handledError instanceof DoNotDevError)) throw handledError;
       // BulkCollisionError surfaces as 400 (invalid-argument) because the
       // caller sent an incoherent payload — same class as schema failure.
       const isCollision = error instanceof BulkCollisionError;

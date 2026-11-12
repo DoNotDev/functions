@@ -22,6 +22,7 @@ import { stripe, validateStripeEnvironment, initStripe } from '../../shared/bill
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';
+import { isOneOf, pinnedSubscriptionPeriod } from '../../shared/billing/stripePinned.js';
 
 const changePlanSchema = v.object({
   userId: v.string(),
@@ -98,8 +99,8 @@ async function changePlanLogic(
     'trialing',
     'incomplete',
   ] as const;
-  const status = validStatuses.includes(updatedSubscription.status as any)
-    ? (updatedSubscription.status as (typeof validStatuses)[number])
+  const status = isOneOf(validStatuses, updatedSubscription.status)
+    ? updatedSubscription.status
     : 'incomplete';
 
   // Update Firebase Auth claims
@@ -109,9 +110,9 @@ async function changePlanLogic(
       tier: billingItem.tier,
       status,
       subscriptionEnd: new Date(
-        (updatedSubscription as any).current_period_end * 1000
+        pinnedSubscriptionPeriod(updatedSubscription).current_period_end * 1000
       ).toISOString(),
-      cancelAtPeriodEnd: (updatedSubscription as any).cancel_at_period_end,
+      cancelAtPeriodEnd: updatedSubscription.cancel_at_period_end,
       subscriptionId: updatedSubscription.id,
       customerId: updatedSubscription.customer as string,
     },
@@ -119,7 +120,7 @@ async function changePlanLogic(
       async getUser(uid: string) {
         return getFirebaseAdminAuth().getUser(uid);
       },
-      async setCustomUserClaims(uid: string, claims: Record<string, any>) {
+      async setCustomUserClaims(uid: string, claims: Record<string, unknown>) {
         await getFirebaseAdminAuth().setCustomUserClaims(uid, claims);
       },
     }

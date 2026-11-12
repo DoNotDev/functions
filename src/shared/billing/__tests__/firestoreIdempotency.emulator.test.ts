@@ -4,7 +4,7 @@
  * @fileoverview Firestore idempotency store against the Firestore emulator
  * @description Runs only when FIRESTORE_EMULATOR_HOST is set, e.g.
  * `bunx firebase-tools emulators:exec --only firestore --project demo-dndev
- *  "bun test src/shared/billing/__tests__/firestoreIdempotency.emulator.test.ts"`.
+ *  "bunx vitest run src/shared/billing/__tests__/firestoreIdempotency.emulator.test.ts"`.
  *
  * @version 0.2.0
  * @since 0.2.0

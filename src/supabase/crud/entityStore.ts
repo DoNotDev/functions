@@ -73,7 +73,7 @@ export interface EntityStore<Row> {
 const SAFE_FIELD_NAME = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 /** The PostgREST filter builder methods the store uses. */
-interface Filterable {
+export interface Filterable {
   eq(column: string, value: unknown): this;
   neq(column: string, value: unknown): this;
   gt(column: string, value: unknown): this;

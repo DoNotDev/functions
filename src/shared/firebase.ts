@@ -89,6 +89,7 @@ export function toISOString(timestamp: FirestoreTimestamp): string {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export function isTimestamp(value: any): value is FirestoreTimestamp {
   return (
     value &&
@@ -97,6 +98,23 @@ export function isTimestamp(value: any): value is FirestoreTimestamp {
     typeof value.nanoseconds === 'number' &&
     typeof value.toDate === 'function' &&
     typeof value.toMillis === 'function'
+  );
+}
+
+/**
+ * Whether a value looks like a Firestore DocumentSnapshot (id, ref, data()).
+ */
+function isDocumentSnapshotLike(value: object): value is {
+  id: unknown;
+  ref: unknown;
+  // why: Firestore DocumentSnapshot.data() contract; the return is not checked at runtime
+  data: () => Record<string, unknown> | undefined;
+} {
+  return (
+    'id' in value &&
+    'ref' in value &&
+    'data' in value &&
+    typeof value.data === 'function'
   );
 }
 
@@ -110,6 +128,7 @@ export function isTimestamp(value: any): value is FirestoreTimestamp {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export function transformFirestoreData<T = any>(
   data: T,
   includeDocumentIds: boolean = false
@@ -121,12 +140,9 @@ export function transformFirestoreData<T = any>(
     includeDocumentIds &&
     typeof data === 'object' &&
     data !== null &&
-    'id' in data &&
-    'ref' in data &&
-    'data' in data &&
-    typeof (data as any).data === 'function'
+    isDocumentSnapshotLike(data)
   ) {
-    const doc = data as any;
+    const doc = data;
     const documentData = doc.data();
     return {
       id: doc.id,
@@ -146,8 +162,8 @@ export function transformFirestoreData<T = any>(
 
   // Handle objects recursively
   if (typeof data === 'object' && data !== null) {
-    const transformed: Record<string, any> = {};
-    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    const transformed: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
       transformed[key] = transformFirestoreData(value);
     }
     return transformed as T;
@@ -168,6 +184,7 @@ export function transformFirestoreData<T = any>(
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export function prepareForFirestore<T = any>(
   data: T,
   removeFields: string[] = []
@@ -183,8 +200,8 @@ export function prepareForFirestore<T = any>(
 
   // Handle objects recursively
   if (typeof data === 'object' && data !== null) {
-    const prepared: Record<string, any> = {};
-    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    const prepared: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
       // Skip fields that should be removed
       if (removeFields.includes(key)) {
         continue;

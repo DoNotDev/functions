@@ -29,6 +29,7 @@ export type GetUserAuthStatusResponse = {
   uid: string;
   email?: string;
   emailVerified: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   customClaims: Record<string, any>;
   disabled: boolean;
 };
@@ -68,6 +69,7 @@ async function getUserAuthStatusLogic(
  * @author AMBROISE PARK Consulting
  */
 export const getUserAuthStatus = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ): CallableFunction<
   GetUserAuthStatusRequest,

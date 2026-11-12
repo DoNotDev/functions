@@ -23,14 +23,15 @@
  * @author AMBROISE PARK Consulting
  */
 
-// Node-only metadata (pid, version) is added when running on Node; Deno runtimes
-// (Supabase Edge) log without it. Server-only by package: @donotdev/functions is
-// never imported by client code, so no runtime browser check (Supabase Edge
-// defines `window`, which made such a check throw on every edge function).
-const _isNodeEnv = typeof process !== 'undefined' && !!process.versions?.node;
+// Server-only by package: @donotdev/functions is never imported by client code,
+// so no runtime browser check (Supabase Edge defines `window`, which made such a
+// check throw on every edge function).
 
 let sentryEnabled = false;
-let sentryClient: any = null;
+let sentryClient: Pick<
+  typeof import('@sentry/node'),
+  'captureException' | 'captureMessage'
+> | null = null;
 
 // Initialize Sentry lazily to avoid Firebase Functions issues
 let sentryInitialized = false;
@@ -88,9 +89,9 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
   error?: Error;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -130,7 +131,7 @@ export const logger = {
    * @since 0.0.1
    * @author AMBROISE PARK Consulting
    */
-  debug(message: string, context?: Record<string, any>): void {
+  debug(message: string, context?: Record<string, unknown>): void {
     this.log(LogLevel.DEBUG, message, context);
   },
 
@@ -143,7 +144,7 @@ export const logger = {
    * @since 0.0.1
    * @author AMBROISE PARK Consulting
    */
-  info(message: string, context?: Record<string, any>): void {
+  info(message: string, context?: Record<string, unknown>): void {
     this.log(LogLevel.INFO, message, context);
   },
 
@@ -156,7 +157,7 @@ export const logger = {
    * @since 0.0.1
    * @author AMBROISE PARK Consulting
    */
-  warn(message: string, context?: Record<string, any>): void {
+  warn(message: string, context?: Record<string, unknown>): void {
     this.log(LogLevel.WARN, message, context);
   },
 
@@ -169,7 +170,10 @@ export const logger = {
    * @since 0.0.1
    * @author AMBROISE PARK Consulting
    */
-  async error(message: string, context?: Record<string, any>): Promise<void> {
+  async error(
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<void> {
     this.log(LogLevel.ERROR, message, context);
 
     // Initialize Sentry lazily if needed
@@ -201,7 +205,10 @@ export const logger = {
    * @since 0.0.1
    * @author AMBROISE PARK Consulting
    */
-  async fatal(message: string, context?: Record<string, any>): Promise<void> {
+  async fatal(
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<void> {
     this.log(LogLevel.FATAL, message, context);
 
     // Initialize Sentry lazily if needed
@@ -236,26 +243,12 @@ export const logger = {
    * @since 0.0.1
    * @author AMBROISE PARK Consulting
    */
-  log(level: LogLevel, message: string, context?: Record<string, any>): void {
+  log(
+    level: LogLevel,
+    message: string,
+    context?: Record<string, unknown>
+  ): void {
     const timestamp = new Date().toISOString();
-    const logEntry: LogEntry = {
-      level,
-      message,
-      timestamp,
-      context,
-      error: context?.error,
-      metadata: {
-        ...(_isNodeEnv
-          ? {
-              pid: process.pid,
-              nodeVersion: process.version,
-              platform: process.platform,
-            }
-          : {}),
-        ...context?.metadata,
-      },
-    };
-
     // Format log entry for console output
     const levelName = LogLevel[level];
     const contextStr = context ? ` ${JSON.stringify(context)}` : '';
@@ -302,21 +295,27 @@ export const logger = {
  * @param context - Additional context to include in all logs
  * @returns Child logger instance
  */
-export function createChildLogger(context: Record<string, any>) {
+export function createChildLogger(context: Record<string, unknown>) {
   return {
-    debug: (message: string, additionalContext?: Record<string, any>) => {
+    debug: (message: string, additionalContext?: Record<string, unknown>) => {
       logger.debug(message, { ...context, ...additionalContext });
     },
-    info: (message: string, additionalContext?: Record<string, any>) => {
+    info: (message: string, additionalContext?: Record<string, unknown>) => {
       logger.info(message, { ...context, ...additionalContext });
     },
-    warn: (message: string, additionalContext?: Record<string, any>) => {
+    warn: (message: string, additionalContext?: Record<string, unknown>) => {
       logger.warn(message, { ...context, ...additionalContext });
     },
-    error: async (message: string, additionalContext?: Record<string, any>) => {
+    error: async (
+      message: string,
+      additionalContext?: Record<string, unknown>
+    ) => {
       await logger.error(message, { ...context, ...additionalContext });
     },
-    fatal: async (message: string, additionalContext?: Record<string, any>) => {
+    fatal: async (
+      message: string,
+      additionalContext?: Record<string, unknown>
+    ) => {
       await logger.fatal(message, { ...context, ...additionalContext });
     },
   };

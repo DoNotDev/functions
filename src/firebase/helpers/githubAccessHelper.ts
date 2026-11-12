@@ -32,6 +32,7 @@ export async function grantGitHubAccessHelper(
   githubUsername: string,
   repoConfig: { owner: string; repo: string },
   permission: 'pull' | 'triage' | 'push' | 'maintain' | 'admin' = 'pull',
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   customClaims?: Record<string, any>
 ): Promise<void> {
   // Get GitHub Personal Access Token
@@ -113,6 +114,7 @@ export async function grantGitHubAccessHelper(
 export async function getCustomClaimsHelper(
   userId: string,
   claimKeys?: string[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 ): Promise<Record<string, any>> {
   // Get user and claims
   const user = await getFirebaseAdminAuth().getUser(userId);
@@ -140,6 +142,7 @@ export async function getCustomClaimsHelper(
  */
 export async function setCustomClaimsHelper(
   userId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   claims: Record<string, any>,
   merge: boolean = true
 ): Promise<void> {

@@ -9,11 +9,7 @@
  * @author AMBROISE PARK Consulting
  */
 
-import type {
-  SubscriptionStatus,
-  SubscriptionClaims,
-} from '@donotdev/core/server';
-import { SUBSCRIPTION_STATUS } from '@donotdev/core/server';
+import type { SubscriptionClaims } from '@donotdev/core/server';
 import {
   getFirebaseAdminAuth,
   getFirebaseAdminFirestore,
@@ -43,90 +39,6 @@ export function getTierFromPriceId(priceId: string): string {
 }
 
 /**
- * Validates subscription status and updates Firebase custom claims
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function updateFirebaseUserSubscription(
-  firebaseUid: string,
-  subscription: any
-): Promise<void> {
-  if (!firebaseUid) {
-    throw new Error('Firebase UID is required to update subscription');
-  }
-
-  const priceId = subscription.items?.data?.[0]?.price?.id;
-  const tier = getTierFromPriceId(priceId);
-
-  // Validate status: must be a framework value OR a valid custom consumer value (non-empty string)
-  // Default to 'incomplete' if invalid/empty
-  const frameworkStatuses = Object.values(SUBSCRIPTION_STATUS);
-  const rawStatus = subscription.status || '';
-  const isValidFrameworkStatus = frameworkStatuses.includes(rawStatus as any);
-  const isValidCustomStatus =
-    typeof rawStatus === 'string' && rawStatus.trim().length > 0;
-
-  const status: SubscriptionStatus =
-    isValidFrameworkStatus || isValidCustomStatus
-      ? (rawStatus as SubscriptionStatus)
-      : SUBSCRIPTION_STATUS.INCOMPLETE;
-
-  const subscriptionClaims: SubscriptionClaims = {
-    tier,
-    subscriptionId: subscription.id,
-    customerId: subscription.customer,
-    status,
-    subscriptionEnd: subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000).toISOString()
-      : null,
-    cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
-    updatedAt: new Date().toISOString(),
-  };
-
-  try {
-    const auth = getFirebaseAdminAuth();
-    const db = getFirebaseAdminFirestore();
-
-    // Read existing claims and merge to avoid overwriting other claims
-    const user = await auth.getUser(firebaseUid);
-    const currentClaims = user.customClaims || {};
-
-    // Update Firebase Auth custom claims
-    await auth.setCustomUserClaims(firebaseUid, {
-      ...currentClaims,
-      subscription: subscriptionClaims,
-    });
-
-    // Also save to Firestore for redundancy and querying
-    await db
-      .collection('subscriptions')
-      .doc(firebaseUid)
-      .set(
-        {
-          ...subscriptionClaims,
-          priceId,
-          createdAt: subscription.created
-            ? new Date(subscription.created * 1000).toISOString()
-            : new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-
-    console.log(`Subscription updated for user ${firebaseUid}:`, {
-      tier,
-      status: subscription.status,
-      subscriptionId: subscription.id,
-    });
-  } catch (error) {
-    console.error('Failed to update user subscription:', error);
-    throw new Error('Failed to update user subscription');
-  }
-}
-
-/**
  * Cancels user subscription and resets to free tier
  *
  * @version 0.1.0
@@ -135,6 +47,7 @@ export async function updateFirebaseUserSubscription(
  */
 export async function cancelUserSubscription(
   firebaseUid: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   subscription: any
 ): Promise<void> {
   if (!firebaseUid) {

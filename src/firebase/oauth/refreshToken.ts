@@ -85,6 +85,7 @@ export const refreshToken = onCall<OAuthRefreshRequest>(async (request) => {
       );
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: untrusted OAuth token response; needs a valibot schema (strict vs loose expires_in is an open owner decision)
     const tokenData = (await response.json()) as any;
 
     // Update the connection in Firestore

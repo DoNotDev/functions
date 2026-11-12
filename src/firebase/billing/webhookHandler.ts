@@ -10,7 +10,7 @@
  */
 
 import { logger } from 'firebase-functions/v2';
-import { onRequest } from 'firebase-functions/v2/https';
+import { onRequest, type Request } from 'firebase-functions/v2/https';
 import type { HttpsFunction } from 'firebase-functions/v2/https';
 
 import type { StripeBackConfig } from '@donotdev/core/server';
@@ -31,10 +31,10 @@ import { stripeSecretKey, stripeWebhookSecret } from '../config/secrets.js'; // 
 /**
  * Read raw body from request stream
  */
-async function getRawBody(req: any): Promise<Buffer> {
+async function getRawBody(req: Request): Promise<Buffer> {
   // If rawBody is already available, use it
-  if ((req as any).rawBody && Buffer.isBuffer((req as any).rawBody)) {
-    return (req as any).rawBody;
+  if (req.rawBody && Buffer.isBuffer(req.rawBody)) {
+    return req.rawBody;
   }
 
   // Otherwise, read from stream

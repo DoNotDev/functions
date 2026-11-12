@@ -9,6 +9,7 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import * as v from 'valibot';
 
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
@@ -24,6 +25,7 @@ const mapper = defaultFieldMapper;
 /** Request payload for updating an entity by ID with optional idempotency. */
 export type UpdateEntityRequest = {
   id: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   payload: Record<string, any>;
   idempotencyKey?: string;
 };
@@ -44,10 +46,10 @@ function normalizeValue(value: unknown): unknown {
 async function checkUniqueKeys(
   collection: string,
   id: string,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   uniqueKeys: UniqueKeyDefinition[],
   isDraft: boolean,
-  supabaseAdmin: any
+  supabaseAdmin: SupabaseClient
 ): Promise<void> {
   for (const uniqueKey of uniqueKeys) {
     if (isDraft && uniqueKey.skipForDrafts === true) continue;
@@ -100,12 +102,13 @@ async function checkUniqueKeys(
  */
 export function createSupabaseUpdateEntity(
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole
 ) {
   const requestSchema = v.object({
     id: v.pipe(v.string(), v.minLength(1)),
-    payload: v.record(v.string(), v.any()),
+    payload: v.record(v.string(), v.unknown()),
     idempotencyKey: v.optional(v.string()),
   });
 
@@ -118,7 +121,7 @@ export function createSupabaseUpdateEntity(
 
       // Idempotency check if key provided
       if (idempotencyKey) {
-        const cachedResult = await checkIdempotency<any>(
+        const cachedResult = await checkIdempotency<unknown>(
           supabaseAdmin,
           idempotencyKey,
           'update'
@@ -143,7 +146,7 @@ export function createSupabaseUpdateEntity(
       // `payload` arrives from the client in camelCase. The merge produces a camelCase object
       // which is later converted back to snake_case via toBackendKeys before the UPDATE query.
       const merged = {
-        ...(mapper.fromBackendRow(existing) as Record<string, any>),
+        ...(mapper.fromBackendRow(existing) as Record<string, unknown>),
         ...payload,
       };
       const status = merged.status ?? existing.status;
@@ -204,7 +207,7 @@ export function createSupabaseUpdateEntity(
         );
       }
 
-      const result = mapper.fromBackendRow(updated) as Record<string, any>;
+      const result = mapper.fromBackendRow(updated) as Record<string, unknown>;
 
       // Store result for idempotency if key provided
       if (idempotencyKey) {

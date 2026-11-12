@@ -32,6 +32,7 @@ export type RemoveCustomClaimsRequest = v.InferOutput<
 >;
 export type RemoveCustomClaimsResponse = {
   success: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
   customClaims: Record<string, any>;
 };
 
@@ -75,6 +76,7 @@ async function removeCustomClaimsLogic(
  * @author AMBROISE PARK Consulting
  */
 export const removeCustomClaims = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ): CallableFunction<
   RemoveCustomClaimsRequest,

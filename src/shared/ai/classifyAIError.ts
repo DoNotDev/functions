@@ -139,12 +139,18 @@ export function mapClassifiedToHTTP(code: AIErrorCode): number {
 function extractStatus(err: unknown): number | undefined {
   if (err && typeof err === 'object') {
     // Anthropic SDK errors have .status
-    if ('status' in err && typeof (err as any).status === 'number') {
-      return (err as any).status;
+    if ('status' in err && typeof err.status === 'number') {
+      return err.status;
     }
     // Some errors nest status in .error
-    if ('error' in err && typeof (err as any).error?.status === 'number') {
-      return (err as any).error.status;
+    if (
+      'error' in err &&
+      typeof err.error === 'object' &&
+      err.error !== null &&
+      'status' in err.error &&
+      typeof err.error.status === 'number'
+    ) {
+      return err.error.status;
     }
   }
   return undefined;
@@ -154,7 +160,7 @@ function extractMessage(err: unknown): string {
   if (err instanceof Error) return err.message.toLowerCase();
   if (typeof err === 'string') return err.toLowerCase();
   if (err && typeof err === 'object' && 'message' in err) {
-    return String((err as any).message).toLowerCase();
+    return String(err.message).toLowerCase();
   }
   return '';
 }
@@ -162,12 +168,14 @@ function extractMessage(err: unknown): string {
 function extractRetryAfter(err: unknown): number | undefined {
   if (err && typeof err === 'object') {
     // Anthropic SDK puts headers on the error
-    const headers = (err as any).headers;
-    if (headers) {
-      const retryAfter =
-        typeof headers.get === 'function'
+    const headers: unknown = 'headers' in err ? err.headers : undefined;
+    if (headers && typeof headers === 'object') {
+      const retryAfter: unknown =
+        'get' in headers && typeof headers.get === 'function'
           ? headers.get('retry-after')
-          : headers['retry-after'];
+          : 'retry-after' in headers
+            ? headers['retry-after']
+            : undefined;
       if (retryAfter) {
         const seconds = Number(retryAfter);
         if (!Number.isNaN(seconds)) return seconds * 1000;

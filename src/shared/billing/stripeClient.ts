@@ -34,7 +34,8 @@ export function initStripe(apiKey: string) {
   const apiVersion = process.env.STRIPE_API_VERSION || STRIPE_API_VERSION_PIN;
 
   _stripe = new Stripe(apiKey, {
-    apiVersion: apiVersion as any,
+    // why: SDK types accept only the latest API version; the pinned/env version is older by design
+    apiVersion: apiVersion as Stripe.LatestApiVersion,
   });
   return _stripe;
 }

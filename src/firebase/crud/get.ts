@@ -36,12 +36,16 @@ export type GetEntityRequest = { id: string };
  */
 function getEntityLogicFactory(
   collection: string,
-  documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  documentSchema: v.GenericSchema,
   ownership?: EntityOwnershipConfig
 ) {
   return async function getEntityLogic(
     data: GetEntityRequest,
-    context: { uid: string; userRole: UserRole; request: CallableRequest<any> }
+    context: {
+      uid: string;
+      userRole: UserRole;
+      request: CallableRequest<GetEntityRequest>;
+    }
   ) {
     const { id } = data;
     const { userRole, uid } = context;
@@ -100,10 +104,13 @@ function getEntityLogicFactory(
  */
 export const getEntity = (
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   ownership?: EntityOwnershipConfig
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 ): CallableFunction<GetEntityRequest, Promise<any>> => {
   const requestSchema =
     customSchema ||

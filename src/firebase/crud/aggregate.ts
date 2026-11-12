@@ -37,6 +37,7 @@ export interface MetricDefinition {
   filter?: {
     field: string;
     operator: '==' | '!=' | '>' | '<' | '>=' | '<=';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
     value: any;
   };
 }
@@ -56,12 +57,14 @@ export interface AggregateConfig {
   /** Group by configurations */
   groupBy?: GroupByDefinition[];
   /** Optional global filters */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported request type; consumers reading where values would get unknown (breaking)
   where?: Array<[string, any, any]>;
 }
 
 /** Request schema for aggregate function */
 interface AggregateRequest {
   /** Optional runtime filters (merged with config filters) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported request type; consumers reading where values would get unknown (breaking)
   where?: Array<[string, any, any]>;
   /** Optional date range filter */
   dateRange?: {
@@ -75,12 +78,34 @@ interface AggregateRequest {
  * Extracts visibility from a Valibot field schema
  */
 function getFieldVisibilityFromSchema(
-  schema: any,
+  schema: unknown,
   fieldName: string
-): string | undefined {
-  if (!schema?.entries?.[fieldName]) return undefined;
-  const field = schema.entries[fieldName];
-  return field?.visibility;
+): unknown {
+  if (typeof schema !== 'object' || schema === null) return undefined;
+  if (!('entries' in schema)) return undefined;
+  const { entries } = schema;
+  if (typeof entries !== 'object' || entries === null) return undefined;
+  const field: unknown = (entries as Record<string, unknown>)[fieldName];
+  if (!field || (typeof field !== 'object' && typeof field !== 'function')) {
+    return undefined;
+  }
+  return 'visibility' in field ? field.visibility : undefined;
+}
+
+/** Visibility levels understood by {@link isFieldVisible}. */
+type FieldVisibility = NonNullable<Parameters<typeof isFieldVisible>[1]>;
+
+const FIELD_VISIBILITY_LEVELS: readonly string[] = [
+  'guest',
+  'user',
+  'admin',
+  'technical',
+  'hidden',
+  'owner',
+] satisfies readonly FieldVisibility[];
+
+function isFieldVisibility(value: unknown): value is FieldVisibility {
+  return typeof value === 'string' && FIELD_VISIBILITY_LEVELS.includes(value);
 }
 
 /**
@@ -88,14 +113,16 @@ function getFieldVisibilityFromSchema(
  */
 function canAggregateField(
   fieldName: string,
-  schema: any,
+  schema: unknown,
   isAdmin: boolean
 ): boolean {
   // '*' is always allowed (count all)
   if (fieldName === '*') return true;
 
   const visibility = getFieldVisibilityFromSchema(schema, fieldName);
-  return isFieldVisible(fieldName, visibility as any, isAdmin);
+  // Unknown visibility levels are denied (same as isFieldVisible's fallback)
+  if (visibility !== undefined && !isFieldVisibility(visibility)) return false;
+  return isFieldVisible(fieldName, visibility, isAdmin);
 }
 
 /**
@@ -122,13 +149,14 @@ function getPriceOrNumberValue(raw: unknown): number {
  * For structured price fields uses effective (discounted) price (expected revenue).
  * Plain numbers are used as-is.
  */
-function getNumericValue(doc: Record<string, any>, field: string): number {
+function getNumericValue(doc: Record<string, unknown>, field: string): number {
   return getPriceOrNumberValue(doc[field]);
 }
 
 /**
  * Computes a single metric on a dataset
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: filter comparisons rely on JS relational coercion over mixed DB values (null/number/string), which TS rejects on unknown
 function computeMetric(docs: any[], metric: MetricDefinition): number | null {
   // Apply metric-level filter if specified
   let filtered = docs;
@@ -214,7 +242,7 @@ function computeMetric(docs: any[], metric: MetricDefinition): number | null {
  */
 function aggregateEntitiesLogicFactory(
   collection: string,
-  documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  documentSchema: v.GenericSchema,
   config: AggregateConfig
 ) {
   return async function aggregateEntitiesLogic(
@@ -282,7 +310,7 @@ function aggregateEntitiesLogicFactory(
     // Functions (default 256MB memory).
     const MAX_AGGREGATE_DOCS = 10_000;
     const snapshot = await query.limit(MAX_AGGREGATE_DOCS).get();
-    const docs: Record<string, any>[] = snapshot.docs.map((doc) => ({
+    const docs: Record<string, unknown>[] = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
@@ -302,7 +330,7 @@ function aggregateEntitiesLogicFactory(
     > = {};
     if (config.groupBy) {
       for (const groupConfig of config.groupBy) {
-        const groupedDocs = new Map<string, any[]>();
+        const groupedDocs = new Map<string, Record<string, unknown>[]>();
 
         // Group documents by field value
         for (const doc of docs) {
@@ -390,11 +418,12 @@ function aggregateEntitiesLogicFactory(
  */
 export const aggregateEntities = (
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   config: AggregateConfig
 ) => {
   const requestSchema = v.object({
-    where: v.optional(v.array(v.tuple([v.string(), v.any(), v.any()]))),
+    where: v.optional(v.array(v.tuple([v.string(), v.unknown(), v.unknown()]))),
     dateRange: v.optional(
       v.object({
         field: v.string(),

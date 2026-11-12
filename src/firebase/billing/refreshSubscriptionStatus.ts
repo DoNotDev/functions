@@ -19,6 +19,7 @@ import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 import { stripe, validateStripeEnvironment } from '../../shared/billing/stripeClient.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
+import { pinnedSubscriptionPeriod } from '../../shared/billing/stripePinned.js';
 
 /**
  * Schema for refreshing subscription status
@@ -70,12 +71,12 @@ async function refreshSubscriptionStatusLogic(
       ...currentClaims.subscription,
       status: subscription.status,
       currentPeriodStart: new Date(
-        (subscription as any).current_period_start * 1000
+        pinnedSubscriptionPeriod(subscription).current_period_start * 1000
       ).toISOString(),
       currentPeriodEnd: new Date(
-        (subscription as any).current_period_end * 1000
+        pinnedSubscriptionPeriod(subscription).current_period_end * 1000
       ).toISOString(),
-      cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
     },
   };
 
@@ -86,9 +87,9 @@ async function refreshSubscriptionStatusLogic(
     userId,
     status: subscription.status,
     currentPeriodEnd: new Date(
-      (subscription as any).current_period_end * 1000
+      pinnedSubscriptionPeriod(subscription).current_period_end * 1000
     ).toISOString(),
-    cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
   };
 }
 
@@ -101,6 +102,7 @@ async function refreshSubscriptionStatusLogic(
  * @author AMBROISE PARK Consulting
  */
 export const refreshSubscriptionStatus = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ) => {
   const schema = customSchema || refreshSubscriptionStatusSchema;

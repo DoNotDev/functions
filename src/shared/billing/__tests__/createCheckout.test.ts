@@ -415,6 +415,100 @@ describe('createCheckoutAlgorithm — StripeOrder session options', () => {
       run(ORDER_REQUEST, makeConfig(withSession({ invoiceFooter: 'x' }, { invoiceCreation: false })))
     ).rejects.toThrow(/invoiceCreation/);
   });
+
+  it('existing customer under automatic tax: customer + customer_update, no customer_email / customer_creation', async () => {
+    const { params } = await run(
+      { ...ORDER_REQUEST, customerEmail: 'pro@example.com' },
+      makeConfig(
+        withSession(
+          { customerId: 'cus_Pro123' },
+          {
+            tax: { mode: 'automatic' },
+            taxIdCollection: 'disabled',
+            shipping: { allowedCountries: ['FR', 'DE'] },
+          }
+        )
+      )
+    );
+    expect(params!.customer).toBe('cus_Pro123');
+    expect(params!.customer_update).toEqual({ address: 'auto', shipping: 'auto' });
+    expect(params).not.toHaveProperty('customer_email');
+    expect(params).not.toHaveProperty('customer_creation');
+    expect(params!.tax_id_collection).toEqual({ enabled: false });
+    expect(params!.automatic_tax).toEqual({ enabled: true });
+  });
+
+  it('existing customer with tax ID collection: customer_update.name auto (Stripe requirement)', async () => {
+    const { params } = await run(
+      ORDER_REQUEST,
+      makeConfig(withSession({ customerId: 'cus_Pro123' }, { taxIdCollection: 'optional' }))
+    );
+    // manual tax, no shipping: only the name is written back
+    expect(params!.customer_update).toEqual({ name: 'auto' });
+  });
+
+  it('existing customer with manual tax, no shipping, no tax ID collection: no customer_update', async () => {
+    const { params } = await run(
+      ORDER_REQUEST,
+      makeConfig(withSession({ customerId: 'cus_Pro123' }, { taxIdCollection: 'disabled' }))
+    );
+    expect(params!.customer).toBe('cus_Pro123');
+    expect(params).not.toHaveProperty('customer_update');
+  });
+
+  it('without customerId keeps customer_email + customer_creation', async () => {
+    const { params } = await run(
+      { ...ORDER_REQUEST, customerEmail: 'pro@example.com' },
+      makeConfig(withSession({}))
+    );
+    expect(params!.customer_email).toBe('pro@example.com');
+    expect(params!.customer_creation).toBe('always');
+    expect(params).not.toHaveProperty('customer');
+    expect(params).not.toHaveProperty('customer_update');
+  });
+
+  it('rejects a customerId that is not a Stripe Customer ID', async () => {
+    await expect(
+      run(ORDER_REQUEST, makeConfig(withSession({ customerId: 'user_42' })))
+    ).rejects.toThrow(/customerId/);
+  });
+
+  it('line taxCode becomes product_data.tax_code under automatic tax', async () => {
+    const shippingLine = { productId: 'shipping', name: 'Colissimo', unitAmount: 1009, quantity: 1, taxCode: 'txcd_92010001' };
+    const order = makeOrderItem({
+      tax: { mode: 'automatic' },
+      resolveLineItems: vi.fn(async () => ({ orderId: 'ord_1', lineItems: [line, shippingLine] })),
+    });
+    const { params } = await run(ORDER_REQUEST, makeConfig(order));
+    expect(params!.line_items![0]!.price_data!.product_data).not.toHaveProperty('tax_code');
+    expect(params!.line_items![1]!.price_data!.product_data!.tax_code).toBe('txcd_92010001');
+  });
+
+  it('rejects a malformed taxCode and a taxCode under manual tax', async () => {
+    const bad = { ...line, taxCode: 'shipping' };
+    await expect(
+      run(
+        ORDER_REQUEST,
+        makeConfig(
+          makeOrderItem({
+            tax: { mode: 'automatic' },
+            resolveLineItems: vi.fn(async () => ({ orderId: 'ord_1', lineItems: [bad] })),
+          })
+        )
+      )
+    ).rejects.toThrow(/taxCode/);
+    const manual = { ...line, taxCode: 'txcd_92010001' };
+    await expect(
+      run(
+        ORDER_REQUEST,
+        makeConfig(
+          makeOrderItem({
+            resolveLineItems: vi.fn(async () => ({ orderId: 'ord_1', lineItems: [manual] })),
+          })
+        )
+      )
+    ).rejects.toThrow(/tax.mode 'automatic'/);
+  });
 });
 
 // ---------------------------------------------------------------------------

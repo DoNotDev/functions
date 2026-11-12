@@ -14,7 +14,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { HIDDEN_STATUSES } from '@donotdev/core/server';
 import type { ListEntityData } from '@donotdev/core/server';
 
-import { handleError } from '../../../shared/errorHandling.js';
+import { DoNotDevError, handleError } from '../../../shared/errorHandling.js';
 import { transformFirestoreData } from '../../../shared/firebase.js';
 import { filterVisibleFields } from '../../../shared/schema.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
@@ -36,6 +36,7 @@ export default async function handler(
       schema,
       limit = 10,
       offset = 0,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: the client supplies the validation schema (known limitation W22); typing needs a server-side entity registry
     } = req.query as unknown as ListEntityData<any> & {
       limit?: string;
       offset?: string;
@@ -69,7 +70,7 @@ export default async function handler(
     const snapshot = await query.get();
 
     // Transform the documents
-    const documents = snapshot.docs.map((doc: any) => {
+    const documents = snapshot.docs.map((doc) => {
       const documentData = transformFirestoreData({
         id: doc.id,
         ...doc.data(),
@@ -86,7 +87,9 @@ export default async function handler(
   } catch (error) {
     try {
       handleError(error);
-    } catch (handledError: any) {
+    } catch (handledError) {
+      // handleError always throws DoNotDevError; narrow for typed access
+      if (!(handledError instanceof DoNotDevError)) throw handledError;
       const status = handledError.code === 'invalid-argument' ? 400 : 500;
       return res
         .status(status)

@@ -15,6 +15,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDenoEnv } from '../shared/denoEnv.js';
 
 // =============================================================================
 // Types
@@ -190,7 +191,7 @@ function jsonResponse(
 
 function getEnv(key: string): string {
   if (typeof globalThis !== 'undefined' && 'Deno' in globalThis) {
-    return (globalThis as any).Deno?.env?.get(key) ?? '';
+    return getDenoEnv()?.get(key) ?? '';
   }
   return typeof process !== 'undefined' ? (process.env[key] ?? '') : '';
 }

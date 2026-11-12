@@ -12,11 +12,15 @@
 import type Stripe from 'stripe';
 
 import { SUBSCRIPTION_STATUS } from '@donotdev/core/server';
-import type { BillingAuthProvider } from '@donotdev/core/server';
+import type {
+  BillingAuthProvider,
+  StripeBackConfig,
+} from '@donotdev/core/server';
 
 import { updateUserSubscription } from './updateUserSubscription.js';
 import { handleError } from '../../errorHandling.js';
 import { stripe, validateStripeEnvironment } from '../stripeClient.js';
+import { isOneOf, pinnedSubscriptionPeriod } from '../stripePinned.js';
 
 /**
  * Cancel user subscription at period end
@@ -59,8 +63,8 @@ export async function cancelUserSubscription(
     'trialing',
     'incomplete',
   ] as const;
-  const status = validStatuses.includes(updatedSubscription.status as any)
-    ? (updatedSubscription.status as (typeof validStatuses)[number])
+  const status = isOneOf(validStatuses, updatedSubscription.status)
+    ? updatedSubscription.status
     : 'incomplete';
 
   // Update Firebase Auth claims
@@ -70,7 +74,7 @@ export async function cancelUserSubscription(
       tier: subscription?.tier || 'free',
       status,
       subscriptionEnd: new Date(
-        (updatedSubscription as any).current_period_end * 1000
+        pinnedSubscriptionPeriod(updatedSubscription).current_period_end * 1000
       ).toISOString(),
       cancelAtPeriodEnd: true,
       subscriptionId: updatedSubscription.id,
@@ -82,7 +86,7 @@ export async function cancelUserSubscription(
   return {
     success: true,
     endsAt: new Date(
-      (updatedSubscription as any).current_period_end * 1000
+      pinnedSubscriptionPeriod(updatedSubscription).current_period_end * 1000
     ).toISOString(),
   };
 }
@@ -98,7 +102,7 @@ export async function changeUserPlan(
   userId: string,
   newPriceId: string,
   billingConfigKey: string,
-  billingConfig: Record<string, any>,
+  billingConfig: StripeBackConfig,
   authProvider: BillingAuthProvider
 ): Promise<{ success: boolean; newTier: string; newPrice: number }> {
   validateStripeEnvironment();
@@ -153,8 +157,8 @@ export async function changeUserPlan(
     'trialing',
     'incomplete',
   ] as const;
-  const status = validStatuses.includes(updatedSubscription.status as any)
-    ? (updatedSubscription.status as (typeof validStatuses)[number])
+  const status = isOneOf(validStatuses, updatedSubscription.status)
+    ? updatedSubscription.status
     : 'incomplete';
 
   // Update Firebase Auth claims
@@ -164,9 +168,9 @@ export async function changeUserPlan(
       tier: billingItem.tier,
       status,
       subscriptionEnd: new Date(
-        (updatedSubscription as any).current_period_end * 1000
+        pinnedSubscriptionPeriod(updatedSubscription).current_period_end * 1000
       ).toISOString(),
-      cancelAtPeriodEnd: (updatedSubscription as any).cancel_at_period_end,
+      cancelAtPeriodEnd: updatedSubscription.cancel_at_period_end,
       subscriptionId: updatedSubscription.id,
       customerId: updatedSubscription.customer as string,
     },

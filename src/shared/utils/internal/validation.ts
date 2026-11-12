@@ -20,6 +20,7 @@ import { DoNotDevError } from '@donotdev/core/server';
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export function safeJsonParse<T = any>(json: string): T | null {
   try {
     return JSON.parse(json);
@@ -64,6 +65,7 @@ export function validateCollectionName(name: string): void {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export function validateDocument(data: any, schema?: any): void {
   // G63: Throw DoNotDevError instead of plain Error for consistent error handling
   if (!data || typeof data !== 'object') {

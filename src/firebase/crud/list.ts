@@ -9,6 +9,7 @@
  * @author AMBROISE PARK Consulting
  */
 
+import type { WhereFilterOp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import type {
   CallableFunction,
@@ -35,6 +36,7 @@ import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_READ_CONFIG } from '../config/constants.js';
 
 export interface ListEntityRequest {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported request type; consumers reading where values would get unknown (breaking)
   where?: Array<[string, any, any]>;
   orderBy?: Array<[string, 'asc' | 'desc']>;
   limit?: number;
@@ -54,7 +56,8 @@ function applyPublicCondition(
 ): Query {
   let q = query;
   for (const c of publicCondition) {
-    q = q.where(c.field, c.op as any, c.value);
+    // why: core types publicCondition.op as string; Firestore validates the operator at runtime
+    q = q.where(c.field, c.op as WhereFilterOp, c.value);
   }
   return q;
 }
@@ -65,7 +68,7 @@ function applyPublicCondition(
  */
 function listEntitiesLogicFactory(
   collection: string,
-  documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  documentSchema: v.GenericSchema,
   listFields?: string[],
   ownership?: EntityOwnershipConfig,
   isListCard?: boolean
@@ -201,7 +204,9 @@ function listEntitiesLogicFactory(
     const snapshot = await query.get();
 
     // Helper: Check if value is a Picture object (has thumbUrl and fullUrl)
-    const isPictureObject = (value: any): boolean => {
+    const isPictureObject = (
+      value: unknown
+    ): value is { thumbUrl: unknown; fullUrl: unknown } => {
       return (
         typeof value === 'object' &&
         value !== null &&
@@ -211,7 +216,7 @@ function listEntitiesLogicFactory(
     };
 
     // Helper: Optimize picture fields for listCard (only return first picture's thumbUrl)
-    const optimizePictureField = (value: any): any => {
+    const optimizePictureField = (value: unknown): unknown => {
       if (Array.isArray(value) && value.length > 0) {
         // Array of pictures - return just the first picture's thumbUrl
         const firstPicture = value[0];
@@ -233,7 +238,7 @@ function listEntitiesLogicFactory(
     const visibilityOptions = ownership && uid ? { uid, ownership } : undefined;
 
     // Filter document fields based on visibility and user role (uid/userRole from context, once)
-    const docs = snapshot.docs.map((doc: any) => {
+    const docs = snapshot.docs.map((doc) => {
       const rawData = doc.data() || {};
       const visibleData = filterVisibleFields(
         rawData,
@@ -246,7 +251,7 @@ function listEntitiesLogicFactory(
 
       // If listFields specified, filter to only those fields (plus id always)
       if (listFields && listFields.length > 0) {
-        const filtered: Record<string, any> = { id: doc.id };
+        const filtered: Record<string, unknown> = { id: doc.id };
         for (const field of listFields) {
           if (field in visibleData) {
             const value = visibleData[field];
@@ -259,7 +264,7 @@ function listEntitiesLogicFactory(
 
       // No listFields restriction, return all visible fields
       // Still optimize picture fields for all list queries (datatables only need thumbUrl)
-      const optimizedData: Record<string, any> = { id: doc.id };
+      const optimizedData: Record<string, unknown> = { id: doc.id };
       for (const [key, value] of Object.entries(visibleData)) {
         optimizedData[key] = optimizePictureField(value);
       }
@@ -289,17 +294,22 @@ function listEntitiesLogicFactory(
  */
 export const listEntities = (
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   listFields?: string[],
   ownership?: EntityOwnershipConfig,
   isListCard?: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 ): CallableFunction<ListEntityRequest, Promise<any>> => {
   const requestSchema =
     customSchema ||
     v.object({
-      where: v.optional(v.array(v.tuple([v.string(), v.any(), v.any()]))),
+      where: v.optional(
+        v.array(v.tuple([v.string(), v.unknown(), v.unknown()]))
+      ),
       orderBy: v.optional(
         v.array(v.tuple([v.string(), v.picklist(['asc', 'desc'])]))
       ),

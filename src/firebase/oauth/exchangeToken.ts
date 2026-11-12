@@ -142,6 +142,7 @@ export const exchangeToken = onCall<ExchangeTokenRequest>(async (request) => {
       );
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: untrusted OAuth token response; needs a valibot schema (strict vs loose expires_in is an open owner decision)
     const tokenData = (await tokenResponse.json()) as any;
 
     // Format the credentials
@@ -210,6 +211,7 @@ export const exchangeToken = onCall<ExchangeTokenRequest>(async (request) => {
 async function fetchUserProfile(
   provider: string,
   accessToken: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: not yet narrowed (any-audit 2026-11-11 follow-up)
 ): Promise<any> {
   try {
     const endpoints = OAUTH_PARTNERS[provider as OAuthPartnerId];
@@ -243,7 +245,9 @@ async function saveOAuthConnection(data: {
   uid: string;
   provider: string;
   purpose: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: not yet narrowed (any-audit 2026-11-11 follow-up)
   credentials: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: not yet narrowed (any-audit 2026-11-11 follow-up)
   profile: any;
 }): Promise<void> {
   try {

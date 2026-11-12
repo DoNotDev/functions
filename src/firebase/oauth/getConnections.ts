@@ -44,7 +44,7 @@ export const getConnections = onCall<{ purpose?: OAuthPurpose }>(
       const snapshot = await query.get();
 
       // Format connections
-      const connections = snapshot.docs.map((doc: any) => {
+      const connections = snapshot.docs.map((doc) => {
         const data = doc.data();
 
         // Check if the token is expired

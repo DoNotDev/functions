@@ -23,6 +23,7 @@ import type { BillingAuthProvider, StripeBackConfig, UpdateSubscriptionFn } from
 import { handleError } from '../errorHandling.js';
 import { logger } from '../logger.js';
 import type { OrderSessionEventType } from './orderWebhook.js';
+import { pinnedInvoiceSubscriptionId, pinnedSubscriptionPeriod } from './stripePinned.js';
 
 /**
  * Checkout Session event of a StripePayment / StripeSubscription item.
@@ -224,7 +225,7 @@ export async function handleInvoicePaymentSucceeded(
   stripe: Stripe,
   authProvider: BillingAuthProvider | null
 ): Promise<void> {
-  const subscriptionId = (invoice as any).subscription as string;
+  const subscriptionId = pinnedInvoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
   // ✅ FIX: Fetch subscription to get metadata
@@ -322,7 +323,7 @@ export async function handleSubscriptionDeleted(
       tier: SUBSCRIPTION_TIERS.FREE,
       status: SUBSCRIPTION_STATUS.CANCELED,
       subscriptionEnd: new Date(
-        (subscription as any).current_period_end * 1000
+        pinnedSubscriptionPeriod(subscription).current_period_end * 1000
       ).toISOString(),
       subscriptionId: subscription.id,
       customerId: subscription.customer as string,

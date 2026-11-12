@@ -138,8 +138,11 @@ function preparePatch(
  */
 export function createSupabaseBulkEntity(
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   createSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   draftCreateSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   updateSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   access: EntityAccessConfig
 ): (req: Request) => Promise<Response> {

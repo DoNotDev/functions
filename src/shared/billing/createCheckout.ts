@@ -88,6 +88,7 @@ export type CheckoutProvider = StripeCheckoutProvider | StripeSessionProvider;
  */
 export interface AuthCheckoutProvider {
   getUser(userId: string): Promise<{
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
     customClaims?: Record<string, any>;
   }>;
 }
@@ -117,6 +118,26 @@ interface BaseSessionParams {
 }
 
 /**
+ * What Checkout writes back to an existing Customer (`customer_update`):
+ * - `address` under automatic tax: Stripe Tax needs an address on the Customer, the
+ *   billing address entered at checkout replaces the saved one;
+ * - `shipping` when shipping is collected (Stripe: needs shipping_address_collection);
+ * - `name` when tax ID collection is enabled (Stripe: required for existing customers).
+ * Undefined when nothing applies (manual tax, no shipping, no tax ID collection).
+ */
+function customerUpdate(
+  item: StripeOrderBackItem,
+  taxIdCollectionEnabled: boolean
+): Stripe.Checkout.SessionCreateParams.CustomerUpdate | undefined {
+  const update: Stripe.Checkout.SessionCreateParams.CustomerUpdate = {
+    ...(item.tax.mode === 'automatic' && { address: 'auto' }),
+    ...(item.shipping && { shipping: 'auto' }),
+    ...(taxIdCollectionEnabled && { name: 'auto' }),
+  };
+  return Object.keys(update).length > 0 ? update : undefined;
+}
+
+/**
  * Session params for a StripeOrder: server-priced lines (excl. VAT) and the
  * item's B2B options.
  */
@@ -131,6 +152,23 @@ function buildOrderSessionParams(
       ? (options.taxRateIds ?? item.tax.taxRateIds)
       : undefined;
   const metadata = { ...base.metadata, [ORDER_ID_METADATA_KEY]: order.orderId };
+  const taxIdCollectionEnabled = item.taxIdCollection !== 'disabled';
+  const update = customerUpdate(item, taxIdCollectionEnabled);
+
+  // Existing Customer: Stripe applies customer_email / customer_creation only when it
+  // creates a Customer, so they are replaced by customer + customer_update.
+  const customerParams: Pick<
+    Stripe.Checkout.SessionCreateParams,
+    'customer' | 'customer_update' | 'customer_email' | 'customer_creation'
+  > = options.customerId
+    ? {
+        customer: options.customerId,
+        ...(update && { customer_update: update }),
+      }
+    : {
+        customer_creation: item.customerCreation,
+        customer_email: base.customerEmail,
+      };
 
   return {
     mode: 'payment',
@@ -143,6 +181,7 @@ function buildOrderSessionParams(
         product_data: {
           name: line.name,
           ...(line.description && { description: line.description }),
+          ...(line.taxCode && { tax_code: line.taxCode }),
           metadata: { [PRODUCT_ID_METADATA_KEY]: line.productId },
         },
       },
@@ -150,14 +189,13 @@ function buildOrderSessionParams(
       ...(taxRates && taxRates.length > 0 && { tax_rates: taxRates }),
     })),
     automatic_tax: { enabled: item.tax.mode === 'automatic' },
-    tax_id_collection:
-      item.taxIdCollection === 'disabled'
-        ? { enabled: false }
-        : {
-            enabled: true,
-            required:
-              item.taxIdCollection === 'required' ? 'if_supported' : 'never',
-          },
+    tax_id_collection: taxIdCollectionEnabled
+      ? {
+          enabled: true,
+          required:
+            item.taxIdCollection === 'required' ? 'if_supported' : 'never',
+        }
+      : { enabled: false },
     billing_address_collection: item.billingAddressCollection,
     ...(item.shipping && {
       shipping_address_collection: {
@@ -171,7 +209,7 @@ function buildOrderSessionParams(
         })),
       }),
     }),
-    customer_creation: item.customerCreation,
+    ...customerParams,
     invoice_creation: {
       enabled: item.invoiceCreation,
       ...(item.invoiceCreation && {
@@ -192,7 +230,6 @@ function buildOrderSessionParams(
     allow_promotion_codes: item.allowPromotionCodes === true,
     success_url: base.successUrl,
     cancel_url: base.cancelUrl,
-    customer_email: base.customerEmail,
     metadata,
     payment_intent_data: { metadata },
   };
@@ -210,7 +247,7 @@ type CheckoutArgs =
  * 3. `beforeCheckout` hook (block/allow)
  * 4. StripeOrder: reject inclusive manual Tax Rates, `resolveLineItems` prices every line
  *    and may set per-order session options (`ResolvedOrder.session`: tax rates,
- *    payment methods, expiry, invoice footer)
+ *    payment methods, expiry, invoice footer, existing Stripe customer)
  * 5. Validate metadata against Stripe limits, create the session through the provider
  *
  * Server-owned metadata (`userId`, `billingConfigKey`, `orderId`) is written after
@@ -359,6 +396,14 @@ export async function createCheckoutAlgorithm(
         (id) => stripeProvider.retrieveTaxRate(id),
         sessionOptions.taxRateIds,
         billingConfigKey
+      );
+    }
+    if (
+      billingItem.tax.mode !== 'automatic' &&
+      order.lineItems.some((line) => line.taxCode !== undefined)
+    ) {
+      throw new Error(
+        `resolveLineItems for '${billingConfigKey}': line taxCode needs tax.mode 'automatic'`
       );
     }
     if (sessionOptions?.invoiceFooter && !billingItem.invoiceCreation) {

@@ -23,6 +23,7 @@ import { AUTH_CONFIG } from '../config/constants.js';
 const getCustomClaimsSchema = v.object({});
 
 type GetCustomClaimsRequest = v.InferOutput<typeof getCustomClaimsSchema>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: not yet narrowed (any-audit 2026-11-11 follow-up)
 type GetCustomClaimsResponse = { customClaims: Record<string, any> };
 
 /**
@@ -53,6 +54,7 @@ async function getCustomClaimsLogic(
  * @author AMBROISE PARK Consulting
  */
 export const getCustomClaims = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ): CallableFunction<
   GetCustomClaimsRequest,

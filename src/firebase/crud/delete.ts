@@ -36,7 +36,11 @@ export type DeleteEntityRequest = { id: string };
 function deleteEntityLogicFactory(collection: string) {
   return async function deleteEntityLogic(
     data: DeleteEntityRequest,
-    context: { uid: string; userRole: UserRole; request: CallableRequest<any> }
+    context: {
+      uid: string;
+      userRole: UserRole;
+      request: CallableRequest<DeleteEntityRequest>;
+    }
   ) {
     const { id } = data;
 
@@ -74,6 +78,7 @@ function deleteEntityLogicFactory(collection: string) {
 export const deleteEntity = (
   collection: string,
   requiredRole: UserRole,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ): CallableFunction<DeleteEntityRequest, Promise<{ success: boolean }>> => {
   const requestSchema =

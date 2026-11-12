@@ -62,8 +62,8 @@ export async function handleEmailRequest(
 
   // Render template with locale
   const locale = request.locale || 'fr';
-  const subject = template.subject(request.data as any, locale);
-  const html = template.html(request.data as any, locale);
+  const subject = template.subject(request.data, locale);
+  const html = template.html(request.data, locale);
 
   // Send via provider
   const result = await provider.send({

@@ -14,6 +14,7 @@ import { logger } from 'firebase-functions/v2';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
 /** Stored result of a previously processed idempotent operation. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export interface IdempotencyResult<T = any> {
   result: T;
   processedAt: string;
@@ -27,6 +28,7 @@ export interface IdempotencyResult<T = any> {
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export async function checkIdempotency<T = any>(
   key: string,
   operation: string
@@ -70,6 +72,7 @@ export async function checkIdempotency<T = any>(
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported signature; narrowing it is a breaking change for importers (deferred to a major, any-audit 2026-11-11)
 export async function storeIdempotencyResult<T = any>(
   key: string,
   operation: string,

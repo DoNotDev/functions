@@ -15,6 +15,7 @@ import * as v from 'valibot';
 import { initStripe, stripe, validateStripeEnvironment } from '../../shared/billing/stripeClient.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { createSupabaseAuthProvider } from '../helpers/authProvider.js';
+import { pinnedSubscriptionPeriod } from '../../shared/billing/stripePinned.js';
 
 // =============================================================================
 // Schema
@@ -66,12 +67,12 @@ export function createRefreshSubscriptionStatus() {
           ...(currentClaims.subscription as Record<string, unknown>),
           status: subscription.status,
           currentPeriodStart: new Date(
-            (subscription as any).current_period_start * 1000
+            pinnedSubscriptionPeriod(subscription).current_period_start * 1000
           ).toISOString(),
           currentPeriodEnd: new Date(
-            (subscription as any).current_period_end * 1000
+            pinnedSubscriptionPeriod(subscription).current_period_end * 1000
           ).toISOString(),
-          cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
         },
       };
 
@@ -82,9 +83,9 @@ export function createRefreshSubscriptionStatus() {
         userId: data.userId,
         status: subscription.status,
         currentPeriodEnd: new Date(
-          (subscription as any).current_period_end * 1000
+          pinnedSubscriptionPeriod(subscription).current_period_end * 1000
         ).toISOString(),
-        cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
       };
     }
   );

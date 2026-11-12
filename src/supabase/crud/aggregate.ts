@@ -16,11 +16,13 @@ import { defaultFieldMapper } from '@donotdev/supabase/server';
 
 import { DoNotDevError } from '../../shared/utils.js';
 import { createSupabaseHandler } from '../baseFunction.js';
+import type { Filterable } from './entityStore.js';
 
 const mapper = defaultFieldMapper;
 
 /** Request payload for aggregate operations (COUNT, SUM, AVG, MIN, MAX) on entities. */
 export type AggregateEntityRequest = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: exported request type; consumers reading where values would get unknown (breaking)
   where?: Array<[string, any, any]>;
   aggregate: {
     field: string;
@@ -29,12 +31,12 @@ export type AggregateEntityRequest = {
   groupBy?: string[];
 };
 
-function applyOperator(
-  query: any,
+function applyOperator<Q extends Filterable>(
+  query: Q,
   column: string,
   operator: string,
-  value: any
-): any {
+  value: unknown
+): Q {
   switch (operator) {
     case '==':
       return query.eq(column, value);
@@ -60,6 +62,35 @@ function applyOperator(
 }
 
 /**
+ * Aggregate one column over rows. `count` counts rows; the numeric operations
+ * ignore null and non-numeric values and return 0 when none remain.
+ */
+function reduceRows(
+  rows: Record<string, unknown>[],
+  operation: AggregateEntityRequest['aggregate']['operation'],
+  column: string
+): number {
+  if (operation === 'count') return rows.length;
+
+  const values = rows
+    .map((row) => row[column])
+    .filter((value) => value != null && !isNaN(Number(value)))
+    .map(Number);
+  if (values.length === 0) return 0;
+
+  switch (operation) {
+    case 'sum':
+      return values.reduce((a, b) => a + b, 0);
+    case 'avg':
+      return values.reduce((a, b) => a + b, 0) / values.length;
+    case 'min':
+      return Math.min(...values);
+    case 'max':
+      return Math.max(...values);
+  }
+}
+
+/**
  * Create a Supabase Edge Function handler for aggregating entities.
  *
  * @param collection - The Supabase table name
@@ -69,11 +100,12 @@ function applyOperator(
  */
 export function createSupabaseAggregateEntities(
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole
 ) {
   const requestSchema = v.object({
-    where: v.optional(v.array(v.tuple([v.string(), v.any(), v.any()]))),
+    where: v.optional(v.array(v.tuple([v.string(), v.unknown(), v.unknown()]))),
     aggregate: v.object({
       field: v.string(),
       operation: v.picklist(['count', 'sum', 'avg', 'min', 'max']),
@@ -89,8 +121,26 @@ export function createSupabaseAggregateEntities(
       const { supabaseAdmin } = ctx;
 
       const aggregateColumn = mapper.toBackendField(aggregate.field);
+      const groupColumns = (groupBy ?? []).map((f) => mapper.toBackendField(f));
+      const isGrouped = groupColumns.length > 0;
+      const isUngroupedCount = !isGrouped && aggregate.operation === 'count';
 
-      let query: any = supabaseAdmin.from(collection);
+      // select() first: filters exist on the filter builder it returns, not on from().
+      // Ungrouped count needs no rows (head request); otherwise fetch only the
+      // group and aggregate columns and aggregate in JS (PostgREST has no GROUP BY).
+      const selectColumns = isUngroupedCount
+        ? '*'
+        : [
+            ...new Set([
+              ...groupColumns,
+              ...(aggregate.operation === 'count' ? [] : [aggregateColumn]),
+            ]),
+          ].join(', ');
+      let query = isUngroupedCount
+        ? supabaseAdmin
+            .from(collection)
+            .select(selectColumns, { count: 'exact', head: true })
+        : supabaseAdmin.from(collection).select(selectColumns);
 
       for (const [field, operator, value] of where) {
         query = applyOperator(
@@ -101,24 +151,6 @@ export function createSupabaseAggregateEntities(
         );
       }
 
-      if (groupBy && groupBy.length > 0) {
-        const groupByColumns = groupBy
-          .map((f) => mapper.toBackendField(f))
-          .join(', ');
-        const selectFields = `${groupByColumns}, ${aggregate.operation}(${aggregateColumn})`;
-        query = query.select(selectFields);
-        for (const field of groupBy) {
-          query = query.group(mapper.toBackendField(field));
-        }
-      } else {
-        if (aggregate.operation === 'count') {
-          query = query.select('*', { count: 'exact', head: true });
-        } else {
-          query = query.select(aggregateColumn);
-        }
-      }
-
-      // Execute query
       const { data: rows, error, count } = await query;
 
       if (error) {
@@ -128,54 +160,35 @@ export function createSupabaseAggregateEntities(
         );
       }
 
-      // Process results
-      if (groupBy && groupBy.length > 0) {
-        const grouped: Record<string, number> = {};
-        for (const row of (rows || []) as any[]) {
-          const groupKey = groupBy
-            .map((f) => row[mapper.toBackendField(f)])
-            .join('|');
-          grouped[groupKey] = row[`${aggregate.operation}`] || 0;
-        }
-        return { value: grouped };
-      } else {
-        // Single aggregate value
-        if (aggregate.operation === 'count') {
-          return { value: count ?? 0 };
-        } else {
-          // Calculate aggregate from rows
-          const values = (rows || ([] as any[]))
-            .map((row: any) => row[aggregateColumn])
-            .filter((v: any) => v != null && !isNaN(Number(v)))
-            .map((v: any) => Number(v));
-
-          if (values.length === 0) {
-            return { value: 0 };
-          }
-
-          let result: number;
-          switch (aggregate.operation) {
-            case 'sum':
-              result = values.reduce((a: number, b: number) => a + b, 0);
-              break;
-            case 'avg':
-              result =
-                values.reduce((a: number, b: number) => a + b, 0) /
-                values.length;
-              break;
-            case 'min':
-              result = Math.min(...values);
-              break;
-            case 'max':
-              result = Math.max(...values);
-              break;
-            default:
-              result = 0;
-          }
-
-          return { value: result };
-        }
+      if (isUngroupedCount) {
+        return { value: count ?? 0 };
       }
+
+      // why: select() with a runtime column string types rows as a parser-error type
+      const typedRows = (rows ?? []) as unknown as Record<string, unknown>[];
+
+      if (!isGrouped) {
+        return {
+          value: reduceRows(typedRows, aggregate.operation, aggregateColumn),
+        };
+      }
+
+      const groups = new Map<string, Record<string, unknown>[]>();
+      for (const row of typedRows) {
+        const groupKey = groupColumns.map((c) => String(row[c])).join('|');
+        const groupRows = groups.get(groupKey);
+        if (groupRows) groupRows.push(row);
+        else groups.set(groupKey, [row]);
+      }
+      const grouped: Record<string, number> = {};
+      for (const [groupKey, groupRows] of groups) {
+        grouped[groupKey] = reduceRows(
+          groupRows,
+          aggregate.operation,
+          aggregateColumn
+        );
+      }
+      return { value: grouped };
     },
     requiredRole
   );

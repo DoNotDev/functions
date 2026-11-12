@@ -95,7 +95,7 @@ export async function storeIdempotency<T>(
         id,
         operation,
         idempotency_key: idempotencyKey,
-        result: result as any,
+        result,
         processed_by: uid,
         expires_at: expiresAt.toISOString(),
       },

@@ -84,13 +84,17 @@ interface BulkAccess {
  */
 export function bulkEntityLogicFactory(
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   createSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   draftCreateSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   updateSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   access: BulkAccess
 ) {
   return async function bulkEntityLogic(
     data: BulkEntityRequest,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: request data is validated by the bulk schema before use; the callable payload type is erased here
     context: { uid: string; userRole: UserRole; request: CallableRequest<any> }
   ): Promise<BulkResponse> {
     const { uid, userRole } = context;
@@ -229,8 +233,11 @@ export function bulkEntityLogicFactory(
  */
 export const bulkEntity = (
   collection: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   createSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   draftCreateSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   updateSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   access: BulkAccess
 ): CallableFunction<BulkEntityRequest, Promise<BulkResponse>> => {

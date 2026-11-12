@@ -17,6 +17,7 @@ import type { RefreshSubscriptionRequest } from '@donotdev/core/server';
 
 import { stripe, validateStripeEnvironment } from '../../../shared/billing/stripeClient.js';
 import { createVercelBaseFunction } from '../../baseFunction.js';
+import { pinnedSubscriptionPeriod } from '../../../shared/billing/stripePinned.js';
 
 const refreshSubscriptionStatusSchema = v.object({
   userId: v.pipe(v.string(), v.minLength(1, 'User ID is required')),
@@ -76,7 +77,7 @@ async function refreshSubscriptionStatusLogic(
     customerId: subscription.customer,
     status: subscription.status,
     currentPeriodEnd: new Date(
-      (subscription as any).current_period_end * 1000
+      pinnedSubscriptionPeriod(subscription).current_period_end * 1000
     ).toISOString(),
   };
 
@@ -113,6 +114,7 @@ async function refreshSubscriptionStatusLogic(
  * @author AMBROISE PARK Consulting
  */
 const refreshSubscriptionStatus = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
 ) => {
   const schema = customSchema || refreshSubscriptionStatusSchema;

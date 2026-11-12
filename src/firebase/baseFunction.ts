@@ -14,6 +14,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import type {
   CallableRequest,
   CallableOptions,
+  FunctionsErrorCode,
 } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
@@ -142,7 +143,8 @@ export function createBaseFunction<TRequest, TResponse>(
         operation,
         schemaType: typeof schema,
         schemaValue: schema,
-        schemaConstructor: (schema as any)?.constructor?.name,
+        schemaConstructor: (schema as object | null | undefined)?.constructor
+          ?.name,
       }
     );
     throw error;
@@ -337,7 +339,8 @@ export function createBaseFunction<TRequest, TResponse>(
           if (classified instanceof DoNotDevError) {
             const { HttpsError } = await import('firebase-functions/v2/https');
             throw new HttpsError(
-              classified.code as any,
+              // why: ErrorCode is a superset of FunctionsErrorCode; HttpsError validates at runtime
+              classified.code as FunctionsErrorCode,
               classified.message,
               classified.details
             );

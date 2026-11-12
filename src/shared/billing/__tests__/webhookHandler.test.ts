@@ -1052,6 +1052,114 @@ describe('event routing — invoice.payment_failed', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('event routing — customer.tax_id.updated', () => {
+  beforeEach(() => {
+    resetIdempotencyStore();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  const taxIdObject = (status: string | null) => ({
+    id: 'txi_123',
+    object: 'tax_id',
+    customer: 'cus_pro_1',
+    type: 'eu_vat',
+    value: 'DE123456789',
+    country: 'DE',
+    verification: status
+      ? { status, verified_name: 'Salon GmbH', verified_address: null }
+      : null,
+  });
+
+  const orderItem = (onTaxIdUpdated?: (...args: any[]) => Promise<void>) => ({
+    type: 'StripeOrder' as const,
+    name: 'Order',
+    currency: 'eur',
+    tax: { mode: 'automatic' },
+    taxIdCollection: 'disabled',
+    billingAddressCollection: 'required',
+    customerCreation: 'always',
+    invoiceCreation: true,
+    resolveLineItems: vi.fn(),
+    onOrderPaid: vi.fn(),
+    ...(onTaxIdUpdated && { onTaxIdUpdated }),
+  });
+
+  it('calls onTaxIdUpdated with the tax ID snapshot and event context', async () => {
+    const onTaxIdUpdated = vi.fn(async () => {});
+    const event = makeEvent('customer.tax_id.updated', taxIdObject('unverified'));
+
+    const result = await callProcessWebhook({
+      stripe: makeStripe(event),
+      config: { ...makeConfig(), shop_order: orderItem(onTaxIdUpdated) },
+    });
+
+    expect(result).toEqual({ success: true, message: 'Webhook processed' });
+    expect(onTaxIdUpdated).toHaveBeenCalledTimes(1);
+    expect(onTaxIdUpdated).toHaveBeenCalledWith(
+      {
+        id: 'txi_123',
+        customerId: 'cus_pro_1',
+        type: 'eu_vat',
+        value: 'DE123456789',
+        country: 'DE',
+        verification: {
+          status: 'unverified',
+          verifiedName: 'Salon GmbH',
+          verifiedAddress: null,
+        },
+      },
+      { billingConfigKey: 'shop_order', eventId: event.id }
+    );
+  });
+
+  it('runs a hook shared by several StripeOrder items once; skips items without it', async () => {
+    const onTaxIdUpdated = vi.fn(async () => {});
+    const event = makeEvent('customer.tax_id.updated', taxIdObject(null));
+
+    await callProcessWebhook({
+      stripe: makeStripe(event),
+      config: {
+        ...makeConfig(),
+        order_a: orderItem(onTaxIdUpdated),
+        order_b: orderItem(onTaxIdUpdated),
+        order_c: orderItem(),
+      },
+    });
+
+    expect(onTaxIdUpdated).toHaveBeenCalledTimes(1);
+    expect((onTaxIdUpdated.mock.calls[0] as any[])[0].verification).toBeNull();
+  });
+
+  it('succeeds without any onTaxIdUpdated hook', async () => {
+    const event = makeEvent('customer.tax_id.updated', taxIdObject('verified'));
+    const result = await callProcessWebhook({
+      stripe: makeStripe(event),
+      config: { ...makeConfig(), shop_order: orderItem() },
+    });
+    expect(result).toEqual({ success: true, message: 'Webhook processed' });
+  });
+
+  it('a throwing hook fails the webhook and the retry is processed (reservation released)', async () => {
+    const onTaxIdUpdated = vi
+      .fn<(...args: any[]) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('db down'))
+      .mockResolvedValueOnce(undefined);
+    const event = makeEvent('customer.tax_id.updated', taxIdObject('unverified'));
+    const config = { ...makeConfig(), shop_order: orderItem(onTaxIdUpdated) };
+
+    await expect(
+      callProcessWebhook({ stripe: makeStripe(event), config })
+    ).rejects.toThrow();
+    const retry = await callProcessWebhook({ stripe: makeStripe(event), config });
+
+    expect(retry).toEqual({ success: true, message: 'Webhook processed' });
+    expect(onTaxIdUpdated).toHaveBeenCalledTimes(2);
+    const replay = await callProcessWebhook({ stripe: makeStripe(event), config });
+    expect(replay).toEqual({ success: true, message: 'Event already processed' });
+    expect(onTaxIdUpdated).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('event routing — unknown event types', () => {
   beforeEach(() => {
     resetIdempotencyStore();

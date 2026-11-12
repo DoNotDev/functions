@@ -14,7 +14,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { HIDDEN_STATUSES } from '@donotdev/core/server';
 import type { GetEntityData } from '@donotdev/core/server';
 
-import { handleError } from '../../../shared/errorHandling.js';
+import { DoNotDevError, handleError } from '../../../shared/errorHandling.js';
 import { transformFirestoreData } from '../../../shared/firebase.js';
 import { filterVisibleFields } from '../../../shared/schema.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
@@ -32,6 +32,7 @@ export default async function handler(
     // C1: verify JWT — previously only checked header presence.
     const uid = await verifyAuthToken(req);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: the client supplies the validation schema (known limitation W22); typing needs a server-side entity registry
     const { schema, id } = req.query as unknown as GetEntityData<any>;
 
     // G71: Validate query params are strings (Next.js can pass string[] for repeated params)
@@ -78,7 +79,9 @@ export default async function handler(
   } catch (error) {
     try {
       handleError(error);
-    } catch (handledError: any) {
+    } catch (handledError) {
+      // handleError always throws DoNotDevError; narrow for typed access
+      if (!(handledError instanceof DoNotDevError)) throw handledError;
       const status = handledError.code === 'invalid-argument' ? 400 : 500;
       return res
         .status(status)
