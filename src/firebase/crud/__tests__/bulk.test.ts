@@ -51,8 +51,19 @@ const tx = {
   }),
 };
 
+/** Stored rows read before validation (status rule); every id exists unless listed in `missingIds`. */
+let storedRows: Record<string, Record<string, unknown>> = {};
+const missingIds = new Set<string>();
+
 const mockDb = {
   collection: vi.fn(() => mockCollection()),
+  getAll: vi.fn(async (...refs: MockRef[]) =>
+    refs.map((ref) => ({
+      id: ref.id,
+      exists: !missingIds.has(ref.id),
+      data: () => storedRows[ref.id] ?? { status: 'available' },
+    }))
+  ),
   runTransaction: vi.fn(async (fn: (t: typeof tx) => Promise<any>) => {
     runTransactionInvocations += 1;
     if (simulateRollback) {
@@ -74,11 +85,12 @@ vi.mock('@donotdev/firebase/server', () => ({
 }));
 
 // Import AFTER mocks are in place.
-import { BulkCollisionError } from '@donotdev/core/server';
+import { BulkCollisionError, createSchemas } from '@donotdev/core/server';
 
 import { bulkEntityLogicFactory } from '../bulk';
 
 import * as v from 'valibot';
+import { contactEntity } from '@dndev/test-entities';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -110,6 +122,8 @@ function resetState() {
   mintedIdCounter = 0;
   runTransactionInvocations = 0;
   simulateRollback = null;
+  storedRows = {};
+  missingIds.clear();
   tx.set.mockClear();
   tx.update.mockClear();
   tx.delete.mockClear();
@@ -328,5 +342,40 @@ describe('bulkEntityLogicFactory', () => {
 
     // Transaction was opened, but caller sees the rollback.
     expect(runTransactionInvocations).toBe(1);
+  });
+});
+
+describe('bulkEntityLogicFactory — status rule on the stored row', () => {
+  const schemas = createSchemas(contactEntity);
+  const logic = () =>
+    bulkEntityLogicFactory(COLLECTION, schemas.create as never, schemas.draft as never, schemas.update as never, access);
+
+  beforeEach(() => {
+    resetState();
+  });
+
+  it('edit of a stored draft without a status is a draft write (empty required field accepted)', async () => {
+    storedRows = { c1: { name: 'Ana', status: 'draft' } };
+    await expect(logic()({ updates: [{ id: 'c1', patch: { name: null } }] }, ctx)).resolves.toMatchObject({ updatedIds: ['c1'] });
+    // Same patch on a published row: rejected
+    storedRows = { c1: { name: 'Ana', status: 'available' } };
+    await expect(logic()({ updates: [{ id: 'c1', patch: { name: null } }] }, ctx)).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('publishing a draft through a status-only patch checks the whole stored row', async () => {
+    storedRows = { c1: { status: 'draft' } };
+    await expect(logic()({ updates: [{ id: 'c1', patch: { status: 'available' } }] }, ctx)).rejects.toMatchObject({ code: 'invalid-argument' });
+    expect(runTransactionInvocations).toBe(0);
+    storedRows = { c1: { name: 'Ana', status: 'draft' } };
+    await logic()({ updates: [{ id: 'c1', patch: { status: 'available' } }] }, ctx);
+    const updateCall = txCalls.find((c) => c.op === 'update') as { data: Record<string, unknown> };
+    expect(updateCall.data.status).toBe('available');
+    expect(updateCall.data).not.toHaveProperty('name');
+  });
+
+  it('rejects an update of a missing row before opening the transaction', async () => {
+    missingIds.add('gone');
+    await expect(logic()({ updates: [{ id: 'gone', patch: { name: 'X' } }] }, ctx)).rejects.toMatchObject({ code: 'not-found' });
+    expect(runTransactionInvocations).toBe(0);
   });
 });

@@ -11,12 +11,11 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-import { HIDDEN_STATUSES } from '@donotdev/core/server';
+import { filterVisibleFields, hiddenStatusesFor } from '@donotdev/core/server';
 import type { ListEntityData } from '@donotdev/core/server';
 
 import { DoNotDevError, handleError } from '../../../shared/errorHandling.js';
 import { transformFirestoreData } from '../../../shared/firebase.js';
-import { filterVisibleFields } from '../../../shared/schema.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import { validateCollectionName } from '../../../shared/utils.js';
 
@@ -56,8 +55,8 @@ export default async function handler(
     let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> =
       db.collection(schema.metadata.collection);
 
-    // Filter out hidden statuses (Vercel routes treat all requests as non-admin)
-    query = query.where('status', 'not-in', [...HIDDEN_STATUSES]);
+    // CRUD rule 4 (core/schemas crud/read); Vercel routes treat all requests as unauthenticated
+    query = query.where('status', 'not-in', [...hiddenStatusesFor(undefined)]);
 
     // Clamp limit to prevent unbounded queries (max 1000, default 1000)
     const parsedLimit = Math.min(parseInt(limit as string) || 1000, 1000);
@@ -75,7 +74,7 @@ export default async function handler(
         id: doc.id,
         ...doc.data(),
       });
-      return filterVisibleFields(documentData, schema, false);
+      return filterVisibleFields(documentData, schema, 'user');
     });
 
     return res.status(200).json({

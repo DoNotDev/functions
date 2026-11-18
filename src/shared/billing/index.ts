@@ -10,6 +10,8 @@
  */
 
 export * from './createCheckout.js';
+/** Read-only order verification and its separate retrieval/binding dependencies. */
+export * from './verifyOrderCheckout.js';
 export * from './helpers/index.js';
 export * from './webhookHandler.js';
 export * from './idempotency.js';

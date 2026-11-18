@@ -43,6 +43,7 @@ const BLOCKED_CLAIM_KEYS = new Set([
   'elevated',
   'plan',
   'tier',
+  'subscription',
   'provider',
   'providers',
   'sub',
@@ -102,10 +103,14 @@ export function createRemoveCustomClaims() {
         delete existingClaims[key];
       }
 
-      // Update app_metadata
+      // Supabase merges app_metadata; omitted keys survive. Null deletes a key.
+      // Patch only requested keys, never replay stale subscription/role metadata.
+      const removals = Object.fromEntries(
+        data.claimsToRemove.map((key) => [key, null])
+      );
       const { error: updateError } =
         await ctx.supabaseAdmin.auth.admin.updateUserById(ctx.uid, {
-          app_metadata: existingClaims,
+          app_metadata: removals,
         });
       if (updateError) throw updateError;
 

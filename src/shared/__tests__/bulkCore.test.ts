@@ -15,8 +15,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { BulkCollisionError } from '@donotdev/core/server';
 import { DoNotDevError } from '@donotdev/core/server';
 import { DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
+import { createSchemas } from '@donotdev/core/server';
 
 import { executeBulk } from '../crud/bulkCore.js';
+import { contactEntity } from '@dndev/test-entities';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -31,6 +33,11 @@ const ACCESS = {
   update: 'user' as const,
   delete: 'user' as const,
 };
+
+/** Stored rows of the mock store: every updated id exists, published, unless listed. */
+let storedRows: Record<string, Record<string, unknown>> = {};
+const readStored = async (ids: readonly string[]) =>
+  new Map(ids.map((id) => [id, storedRows[id] ?? { status: 'available' }]));
 
 /** Default response-shape returned by the mock transact. */
 function okResponse(prepared: {
@@ -60,6 +67,7 @@ describe('executeBulk (shared CRUD core)', () => {
       createSchema,
       updateSchema,
       access: ACCESS,
+      readStored,
       uid: 'u1',
       userRole: 'user',
       transact,
@@ -85,6 +93,7 @@ describe('executeBulk (shared CRUD core)', () => {
       createSchema,
       updateSchema,
       access: ACCESS,
+      readStored,
       uid: 'u1',
       userRole: 'user',
       transact,
@@ -114,6 +123,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -138,6 +148,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -159,6 +170,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: { ...ACCESS, delete: 'admin' },
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -181,6 +193,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: { read: 'user' }, // no create role configured
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -204,6 +217,7 @@ describe('executeBulk (shared CRUD core)', () => {
       createSchema,
       updateSchema,
       access: { update: 'user' }, // no create/delete roles configured — fine
+      readStored,
       uid: 'u1',
       userRole: 'user',
       transact,
@@ -225,6 +239,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -249,6 +264,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -258,6 +274,173 @@ describe('executeBulk (shared CRUD core)', () => {
       message: expect.stringContaining('updates[0]'),
     });
 
+    expect(transact).not.toHaveBeenCalled();
+  });
+
+  it('validates updates with the entity schemas: draft patch → draft schema, other → update schema (with the id)', async () => {
+    const schemas = createSchemas(contactEntity);
+    const run = (patch: Record<string, unknown>) =>
+      executeBulk({
+        collection: 'contacts',
+        ops: { updates: [{ id: 'c1', patch }] },
+        createSchema: schemas.create,
+        draftCreateSchema: schemas.draft,
+        updateSchema: schemas.update,
+        access: ACCESS,
+        readStored,
+        uid: 'u1',
+        userRole: 'user',
+        transact: async (prepared) => okResponse(prepared),
+      });
+    await expect(run({ name: 'Ana' })).resolves.toMatchObject({ updatedIds: ['c1'] });
+    await expect(run({ status: 'draft', name: null })).resolves.toMatchObject({ updatedIds: ['c1'] });
+    for (const patch of [{ name: null }, { name: '' }, { status: 'draft', phone: 'TOTO' }]) {
+      await expect(run(patch)).rejects.toMatchObject({ code: 'invalid-argument' });
+    }
+  });
+
+  it('stores the parse output: unknown keys dropped from inserts and patches', async () => {
+    const transact = vi.fn(okResponse);
+    await executeBulk({
+      collection: 'events',
+      ops: {
+        inserts: [{ name: 'Alice', role: 'admin' }],
+        updates: [{ id: 'u1', patch: { name: 'Bob', createdById: 'evil' } }],
+      },
+      createSchema,
+      updateSchema,
+      access: ACCESS,
+      readStored,
+      uid: 'u1',
+      userRole: 'user',
+      transact,
+    });
+    const prepared = transact.mock.calls[0]![0];
+    expect(prepared.inserts[0]!.row).toEqual({ name: 'Alice', status: DEFAULT_STATUS_VALUE });
+    expect(prepared.updates[0]!.patch).toEqual({ name: 'Bob' });
+  });
+
+  it('keeps a client-supplied insert id (pre-minted, referenced by other rows) when the target mints', async () => {
+    const schemas = createSchemas(contactEntity);
+    const transact = vi.fn(okResponse);
+    await executeBulk({
+      collection: 'lines',
+      ops: { inserts: [{ id: 'line-1', name: 'A' }, { name: 'B' }] },
+      createSchema: schemas.create,
+      updateSchema: schemas.update,
+      access: ACCESS,
+      readStored,
+      uid: 'u1',
+      userRole: 'user',
+      transact,
+    });
+    const prepared = transact.mock.calls[0]![0];
+    expect(prepared.inserts[0]).toMatchObject({ id: 'line-1', row: { id: 'line-1', name: 'A' } });
+    expect(prepared.inserts[1]!.id).toBe('');
+    expect(prepared.inserts[1]!.row).not.toHaveProperty('id');
+  });
+
+  it('with mintInsertId the minted id wins over a client id', async () => {
+    const transact = vi.fn(okResponse);
+    await executeBulk({
+      collection: 'events',
+      ops: { inserts: [{ id: 'client-1', name: 'A' }] },
+      createSchema,
+      updateSchema,
+      access: ACCESS,
+      readStored,
+      uid: 'u1',
+      userRole: 'user',
+      mintInsertId: () => 'minted-1',
+      transact,
+    });
+    const prepared = transact.mock.calls[0]![0];
+    expect(prepared.inserts[0]!.id).toBe('minted-1');
+    expect(prepared.inserts[0]!.row).not.toHaveProperty('id');
+  });
+
+  it('update schema from the resulting status (patch ?? stored): a stored draft edit stays a draft write', async () => {
+    const schemas = createSchemas(contactEntity);
+    const transact = vi.fn(okResponse);
+    const run = (patch: Record<string, unknown>) =>
+      executeBulk({
+        collection: 'contacts',
+        ops: { updates: [{ id: 'c1', patch }] },
+        createSchema: schemas.create,
+        draftCreateSchema: schemas.draft,
+        updateSchema: schemas.update,
+        access: ACCESS,
+        readStored,
+        uid: 'u1',
+        userRole: 'user',
+        transact,
+      });
+    // Client form edit of a stored draft by a viewer who cannot edit status
+    storedRows = { c1: { id: 'c1', name: 'Ana', status: 'draft' } };
+    await expect(run({ name: null })).resolves.toMatchObject({ updatedIds: ['c1'] });
+    // Publishing through a status-only patch: the whole stored row is checked
+    storedRows = { c1: { id: 'c1', name: null, status: 'draft' } };
+    await expect(run({ status: 'available' })).rejects.toMatchObject({ code: 'invalid-argument', message: expect.stringContaining('updates[0]') });
+    storedRows = { c1: { id: 'c1', status: 'draft' } };
+    await expect(run({ status: 'available' })).rejects.toMatchObject({ code: 'invalid-argument' });
+    // Soft-deleting a draft stays relaxed
+    storedRows = { c1: { id: 'c1', name: null, status: 'draft' } };
+    await expect(run({ status: 'deleted' })).resolves.toMatchObject({ updatedIds: ['c1'] });
+    // Filled in: published, only the sent keys written
+    transact.mockClear();
+    storedRows = { c1: { id: 'c1', name: 'Ana', status: 'draft' } };
+    await run({ status: 'available' });
+    expect(transact.mock.calls[0]![0].updates[0]!.patch).toEqual({ status: 'available' });
+    storedRows = {};
+  });
+
+  it('updates without readStored are rejected (internal), no transact', async () => {
+    const transact = vi.fn(okResponse);
+    await expect(
+      executeBulk({
+        collection: 'events',
+        ops: { updates: [{ id: 'e1', patch: { name: 'x' } }] },
+        createSchema,
+        updateSchema,
+        access: ACCESS,
+        uid: 'u1',
+        userRole: 'user',
+        transact,
+      })
+    ).rejects.toMatchObject({ code: 'internal', message: expect.stringContaining('readStored') });
+    expect(transact).not.toHaveBeenCalled();
+  });
+
+  it('inserts and deletes need no readStored', async () => {
+    await expect(
+      executeBulk({
+        collection: 'events',
+        ops: { inserts: [{ name: 'a' }], deletes: ['e9'] },
+        createSchema,
+        updateSchema,
+        access: ACCESS,
+        uid: 'u1',
+        userRole: 'user',
+        transact: async (prepared) => okResponse(prepared),
+      })
+    ).resolves.toMatchObject({ deletedIds: ['e9'] });
+  });
+
+  it('an updated id with no stored row is rejected (not-found), no transact', async () => {
+    const transact = vi.fn(okResponse);
+    await expect(
+      executeBulk({
+        collection: 'events',
+        ops: { updates: [{ id: 'gone', patch: { name: 'x' } }] },
+        createSchema,
+        updateSchema,
+        access: ACCESS,
+        readStored: async () => new Map(),
+        uid: 'u1',
+        userRole: 'user',
+        transact,
+      })
+    ).rejects.toMatchObject({ code: 'not-found', message: expect.stringContaining('updates[0]') });
     expect(transact).not.toHaveBeenCalled();
   });
 
@@ -272,6 +455,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -299,6 +483,7 @@ describe('executeBulk (shared CRUD core)', () => {
       createSchema,
       updateSchema,
       access: ACCESS,
+      readStored,
       uid: 'user-1',
       userRole: 'user',
       mintInsertId: () => `mint-${++mintCounter}`,
@@ -364,6 +549,7 @@ describe('executeBulk (shared CRUD core)', () => {
       createSchema,
       updateSchema,
       access: ACCESS,
+      readStored,
       uid: 'user-1',
       userRole: 'user',
       transact,
@@ -391,6 +577,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -415,6 +602,7 @@ describe('executeBulk (shared CRUD core)', () => {
       createSchema,
       updateSchema,
       access: ACCESS,
+      readStored,
       uid: 'u1',
       userRole: 'user',
       transact,
@@ -440,6 +628,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -461,6 +650,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,
@@ -479,6 +669,7 @@ describe('executeBulk (shared CRUD core)', () => {
         createSchema,
         updateSchema,
         access: ACCESS,
+        readStored,
         uid: 'u1',
         userRole: 'user',
         transact,

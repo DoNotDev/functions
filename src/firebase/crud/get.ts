@@ -15,11 +15,7 @@ import type {
 } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
-import {
-  filterVisibleFields,
-  hasRoleAccess,
-  HIDDEN_STATUSES,
-} from '@donotdev/core/server';
+import { filterVisibleFields, isReadableBy } from '@donotdev/core/server';
 import type { EntityOwnershipConfig, UserRole } from '@donotdev/core/server';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
@@ -62,14 +58,9 @@ function getEntityLogicFactory(
       throw new DoNotDevError('Entity not found', 'not-found');
     }
 
-    const isAdmin = hasRoleAccess(userRole, 'admin'); // Uses role hierarchy
-
-    // Hide drafts/deleted from non-admin users (security: hidden statuses never reach public)
+    // CRUD rule 4 (core/schemas crud/read): hidden statuses never reach non-admins
     const docData = doc.data();
-    if (
-      !isAdmin &&
-      (HIDDEN_STATUSES as readonly string[]).includes(docData?.status)
-    ) {
+    if (!isReadableBy(docData, userRole)) {
       throw new DoNotDevError('Entity not found', 'not-found');
     }
 

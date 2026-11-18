@@ -12,12 +12,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import * as v from 'valibot';
 
-import { filterVisibleFields } from '@donotdev/core/server';
+import { filterVisibleFields, prepareCreate } from '@donotdev/core/server';
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
 import { defaultFieldMapper } from '@donotdev/supabase/server';
 
 import { createMetadata } from '../../shared/metadata.js';
-import { DoNotDevError, validateDocument } from '../../shared/utils.js';
+import { writtenOf } from '../../shared/crud/written.js';
+import { DoNotDevError } from '../../shared/utils.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { checkIdempotency, storeIdempotency } from '../utils/idempotency.js';
 
@@ -122,8 +123,12 @@ async function checkUniqueKeys(
 /**
  * Create a Supabase Edge Function handler for creating an entity.
  *
+ * Status rule: a create without status gets `DEFAULT_STATUS_VALUE`; the CRUD rules
+ * picks the draft or create schema; the parse output is inserted, never the raw payload.
+ *
  * @param collection - The Supabase table name
- * @param documentSchema - The Valibot schema for document validation
+ * @param createDocumentSchema - The create schema (`createSchemas(entity).create`)
+ * @param draftDocumentSchema - The draft schema (`createSchemas(entity).draft`)
  * @param requiredRole - Minimum role required for this operation
  * @returns A `(req: Request) => Promise<Response>` handler for Deno.serve
  */
@@ -159,9 +164,9 @@ export function createSupabaseCreateEntity(
         }
       }
 
-      // New records start as drafts unless the caller explicitly sets a status.
-      const status = payload.status ?? 'draft';
-      const isDraft = status === 'draft';
+      // CRUD create rules (core/schemas crud/create), as on the client.
+      const schemas = { create: createDocumentSchema, draft: draftDocumentSchema };
+      const isDraft = prepareCreate(schemas, payload).schemaKey === 'draft';
 
       // Check unique keys if schema has metadata with uniqueKeys
       const schemaWithMeta = createDocumentSchema as {
@@ -194,35 +199,20 @@ export function createSupabaseCreateEntity(
           ? normalizePayloadForUniqueKeys(payload, uniqueKeys)
           : payload;
 
-      // Validate against the appropriate schema.
-      // Drafts must validate with `schemas.draft` so required fields become
-      // nullish/optional (instead of failing strict `schemas.create`).
-      const payloadForValidation = { ...normalizedPayload, status };
-      validateDocument(
-        payloadForValidation,
-        isDraft ? draftDocumentSchema : createDocumentSchema
-      );
+      // Insert the rules' `written` (resulting status included), never the raw payload.
+      const written = writtenOf(prepareCreate(schemas, normalizedPayload), collection, 'create');
 
       const metadata = createMetadata(uid);
       const snakeMetadata = mapper.toBackendKeys(
         metadata as Record<string, unknown>
       );
-
-      const {
-        createdAt,
-        updatedAt,
-        created_at,
-        updated_at,
-        ...payloadWithoutTimestamps
-      } = normalizedPayload;
-      const snakePayload = mapper.toBackendKeys(payloadWithoutTimestamps);
+      const snakePayload = mapper.toBackendKeys(written);
 
       // Insert document (DB sets created_at/updated_at via triggers)
       const { data: inserted, error } = await supabaseAdmin
         .from(collection)
         .insert({
           ...snakePayload,
-          status,
           ...snakeMetadata,
         })
         .select()

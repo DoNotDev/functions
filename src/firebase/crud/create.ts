@@ -17,6 +17,7 @@ import type {
 } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
+import { prepareCreate } from '@donotdev/core/server';
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
@@ -25,7 +26,8 @@ import {
   transformFirestoreData,
 } from '../../shared/index.js';
 import { createMetadata } from '../../shared/index.js';
-import { DoNotDevError, validateDocument } from '../../shared/utils.js';
+import { writtenOf } from '../../shared/crud/written.js';
+import { DoNotDevError } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
 
@@ -147,11 +149,19 @@ async function checkUniqueKeys(
  * Generic business logic for creating entities
  * Base function handles: validation, auth, rate limiting, monitoring
  *
- * @version 0.1.0
+ * Status rule: a create without status gets `DEFAULT_STATUS_VALUE`; the CRUD rules
+ * picks the draft or create schema; the parse output is written, never the raw payload.
+ *
+ * @param collection - The Firestore collection name
+ * @param createDocumentSchema - The create schema (`createSchemas(entity).create`)
+ * @param draftDocumentSchema - The draft schema (`createSchemas(entity).draft`)
+ * @returns The callable logic (exported for unit tests)
+ *
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-function createEntityLogicFactory(
+export function createEntityLogicFactory(
   collection: string,
   createDocumentSchema: v.GenericSchema,
   draftDocumentSchema: v.GenericSchema
@@ -217,9 +227,9 @@ function createEntityLogicFactory(
       }
     }
 
-    // New records start as drafts unless the caller explicitly sets a status.
-    const status = payload.status ?? 'draft';
-    const isDraft = status === 'draft';
+    // CRUD create rules (core/schemas crud/create), as on the client.
+    const schemas = { create: createDocumentSchema, draft: draftDocumentSchema };
+    const isDraft = prepareCreate(schemas, payload).schemaKey === 'draft';
 
     // Check unique keys if schema has metadata with uniqueKeys
     // This handles findOrCreate behavior and duplicate prevention
@@ -256,21 +266,12 @@ function createEntityLogicFactory(
         ? normalizePayloadForUniqueKeys(payload, uniqueKeys)
         : payload;
 
-    // Validate the document against the appropriate schema.
-    // Drafts must validate against `schemas.draft` so required fields become
-    // nullish/optional (so `null` empties don't fail strict `schemas.create`).
-    const payloadForValidation = { ...normalizedPayload, status };
-    if (isDraft) {
-      validateDocument(payloadForValidation, draftDocumentSchema);
-    } else {
-      validateDocument(payloadForValidation, createDocumentSchema);
-    }
+    // Store the rules' `written` (resulting status included), never the raw payload.
+    const written = writtenOf(prepareCreate(schemas, normalizedPayload), collection, 'create');
 
     // Prepare the document for Firestore and add metadata
-    // Always ensure status is set
     const documentData = {
-      ...prepareForFirestore(normalizedPayload),
-      status, // Ensure status is always present
+      ...prepareForFirestore(written),
       ...createMetadata(uid),
     };
 

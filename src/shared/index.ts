@@ -12,7 +12,6 @@
 export * from './errorHandling.js';
 export * from './github.js';
 export * from './metadata.js';
-export * from './schema.js';
 export * from './utils/index.js';
 export * from './crud/index.js';
 export * from './ai/index.js';

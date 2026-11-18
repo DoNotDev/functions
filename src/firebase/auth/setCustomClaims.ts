@@ -38,6 +38,9 @@ const BLOCKED_CLAIM_KEYS = new Set([
   'moderator',
   'staff',
   'elevated',
+  'plan',
+  'tier',
+  'subscription',
 ]);
 
 const setCustomClaimsSchema = v.object({

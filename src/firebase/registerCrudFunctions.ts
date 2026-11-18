@@ -100,6 +100,7 @@ export function createCrudFunctions(
     functions[`${prefix}update_${col}`] = updateEntity(
       col,
       schemas.update,
+      schemas.draft,
       access.update
     );
     functions[`${prefix}delete_${col}`] = deleteEntity(col, access.delete);

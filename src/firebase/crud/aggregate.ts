@@ -13,11 +13,10 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
-import { hasRoleAccess } from '@donotdev/core/server';
-import type { UserRole } from '@donotdev/core/server';
+import { isFieldVisible, VISIBILITY } from '@donotdev/core/server';
+import type { UserRole, Visibility } from '@donotdev/core/server';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
-import { isFieldVisible } from '../../shared/schema.js';
 import { DoNotDevError } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
@@ -92,37 +91,28 @@ function getFieldVisibilityFromSchema(
   return 'visibility' in field ? field.visibility : undefined;
 }
 
-/** Visibility levels understood by {@link isFieldVisible}. */
-type FieldVisibility = NonNullable<Parameters<typeof isFieldVisible>[1]>;
+const FIELD_VISIBILITY_LEVELS: readonly string[] = Object.values(VISIBILITY);
 
-const FIELD_VISIBILITY_LEVELS: readonly string[] = [
-  'guest',
-  'user',
-  'admin',
-  'technical',
-  'hidden',
-  'owner',
-] satisfies readonly FieldVisibility[];
-
-function isFieldVisibility(value: unknown): value is FieldVisibility {
+function isFieldVisibility(value: unknown): value is Visibility {
   return typeof value === 'string' && FIELD_VISIBILITY_LEVELS.includes(value);
 }
 
 /**
- * Checks if user can access a field for aggregation
+ * Checks if user can access a field for aggregation (core visibility rule,
+ * `isFieldVisible`; `owner` fields need a document and are denied here)
  */
 function canAggregateField(
   fieldName: string,
   schema: unknown,
-  isAdmin: boolean
+  userRole: UserRole
 ): boolean {
   // '*' is always allowed (count all)
   if (fieldName === '*') return true;
 
   const visibility = getFieldVisibilityFromSchema(schema, fieldName);
-  // Unknown visibility levels are denied (same as isFieldVisible's fallback)
+  // Unknown visibility levels are denied
   if (visibility !== undefined && !isFieldVisibility(visibility)) return false;
-  return isFieldVisible(fieldName, visibility, isAdmin);
+  return isFieldVisible(visibility, userRole);
 }
 
 /**
@@ -255,7 +245,6 @@ function aggregateEntitiesLogicFactory(
   ) {
     const db = getFirebaseAdminFirestore();
     const { userRole } = context;
-    const isAdmin = hasRoleAccess(userRole, 'admin');
 
     // Validate that user can access the fields being aggregated
     const allFields = new Set<string>();
@@ -267,7 +256,7 @@ function aggregateEntitiesLogicFactory(
     });
 
     for (const field of allFields) {
-      if (!canAggregateField(field, documentSchema, isAdmin)) {
+      if (!canAggregateField(field, documentSchema, userRole)) {
         throw new DoNotDevError(
           `Access denied: cannot aggregate field '${field}'`,
           'permission-denied'

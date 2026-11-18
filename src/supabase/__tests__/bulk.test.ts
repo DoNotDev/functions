@@ -64,7 +64,8 @@ const access = {
 /** Build a bulk handler + a stubbed Supabase admin client. */
 function setup(opts?: {
   rpcResult?: unknown;
-  rpcError?: { message: string } | null;
+  rpcError?: { message: string; code?: string } | null;
+  storedRows?: Record<string, Record<string, unknown>>;
 }) {
   const rpcSpy = vi.fn().mockResolvedValue({
     data: opts?.rpcResult ?? {
@@ -74,7 +75,15 @@ function setup(opts?: {
     },
     error: opts?.rpcError ?? null,
   });
-  const supabaseAdmin = { rpc: rpcSpy } as unknown as any;
+  // Stored rows read before validation (status rule): every updated id exists, published.
+  const inSpy = vi.fn(async (_column: string, ids: string[]) => ({
+    data: ids.map((id) => ({ id, ...(opts?.storedRows?.[id] ?? { status: 'available' }) })),
+    error: null,
+  }));
+  const supabaseAdmin = {
+    rpc: rpcSpy,
+    from: vi.fn(() => ({ select: () => ({ in: inSpy }) })),
+  } as unknown as any;
 
   const inner = createSupabaseBulkEntity(
     'events',
@@ -87,6 +96,7 @@ function setup(opts?: {
   return {
     handler: inner,
     rpcSpy,
+    inSpy,
     ctx: {
       uid: 'user-1',
       userRole: 'user' as const,
@@ -129,6 +139,7 @@ describe('createSupabaseBulkEntity', () => {
         p_inserts: expect.any(Array),
         p_updates: expect.any(Array),
         p_deletes: ['d-1'],
+        p_expected_statuses: { 'u-1': 'available' },
       })
     );
     expect(result).toEqual(rpcResult);
@@ -328,5 +339,52 @@ describe('createSupabaseBulkEntity', () => {
     expect(args.p_inserts.map((r: any) => r.name)).toEqual(['A', 'B', 'C']);
     expect(args.p_updates.map((u: any) => u.id)).toEqual(['u-1', 'u-2']);
     expect(args.p_deletes).toEqual(['d-1', 'd-2']);
+  });
+
+  it('keeps a client-supplied insert id in the RPC row (pre-minted ids win)', async () => {
+    const { handler, rpcSpy, ctx } = setup({
+      rpcResult: { insertedIds: ['line-1'], updatedIds: [], deletedIds: [] },
+    });
+    const IdLess = v.object({ name: v.pipe(v.string(), v.minLength(1)) });
+    const inner = createSupabaseBulkEntity('events', IdLess, IdLess, UpdateSchema, access) as unknown as (data: any, c: any) => Promise<any>;
+    await inner({ inserts: [{ id: 'line-1', name: 'A' }] }, ctx);
+    expect(handler).toBeDefined();
+    const args = rpcSpy.mock.calls[0]![1] as { p_inserts: Record<string, unknown>[] };
+    expect(args.p_inserts[0]).toMatchObject({ id: 'line-1', name: 'A' });
+  });
+
+  it('reads the stored rows of the updated ids once (status rule)', async () => {
+    const { handler, inSpy, ctx } = setup({
+      rpcResult: { insertedIds: [], updatedIds: ['u-1', 'u-2'], deletedIds: [] },
+    });
+    await handler({ updates: [{ id: 'u-1', patch: { name: 'A' } }, { id: 'u-2', patch: { name: 'B' } }] }, ctx);
+    expect(inSpy).toHaveBeenCalledTimes(1);
+    expect(inSpy).toHaveBeenCalledWith('id', ['u-1', 'u-2']);
+  });
+
+  it('sends the statuses read to crud_bulk, which re-checks them under lock', async () => {
+    const { handler, rpcSpy, ctx } = setup({
+      storedRows: { 'u-1': { status: 'draft' }, 'u-2': { status: 'available' } },
+    });
+    await handler(
+      { updates: [{ id: 'u-1', patch: { name: 'A' } }, { id: 'u-2', patch: { name: 'B' } }] },
+      ctx
+    );
+    expect(rpcSpy.mock.calls[0]![1].p_expected_statuses).toEqual({
+      'u-1': 'draft',
+      'u-2': 'available',
+    });
+  });
+
+  it('a status changed between read and write (PT409) rejects the bulk, nothing written', async () => {
+    const { handler, ctx } = setup({
+      rpcError: {
+        code: 'PT409',
+        message: 'crud_bulk: status of events id=u-1 changed since it was read (expected available, found draft)',
+      },
+    });
+    await expect(
+      handler({ updates: [{ id: 'u-1', patch: { name: 'A' } }] }, ctx)
+    ).rejects.toMatchObject({ code: 'unavailable', message: expect.stringContaining('changed since it was read') });
   });
 });

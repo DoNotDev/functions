@@ -23,6 +23,7 @@ import {
   BulkCollisionError,
   BulkRequestSchema,
   DoNotDevError,
+  statusOf,
 } from '@donotdev/core/server';
 import type {
   BulkRequest,
@@ -41,6 +42,13 @@ import { createSupabaseHandler } from '../baseFunction.js';
 // =============================================================================
 
 const mapper = defaultFieldMapper;
+
+/**
+ * SQLSTATE `crud_bulk` raises when an updated row's status is not the one read
+ * before the RPC (custom `PT409`, HTTP 409 via PostgREST, never retried): the bulk was validated against a stale
+ * status, nothing is written.
+ */
+const STATUS_CHANGED_SQLSTATE = 'PT409';
 
 /** Request payload accepted by the bulk handler — mirrors {@link BulkRequestSchema}. */
 export type BulkEntityRequest = BulkRequest;
@@ -103,6 +111,13 @@ function preparePatch(
  * which wraps `BEGIN ... COMMIT` — any failure triggers `ROLLBACK` and the
  * client observes a rejected promise with no partial state.
  *
+ * The stored rows of the updated ids are read before the RPC (their status picks
+ * each patch's schema, the CRUD rules). The statuses read are passed as
+ * `p_expected_statuses`; `crud_bulk` locks each updated row (`FOR UPDATE`) and
+ * rejects the whole bulk (`unavailable`, nothing written) when a status changed in
+ * between. Requires the `crud_bulk_status_guard` migration (5-argument
+ * `crud_bulk`); against an older database the RPC call fails (function not found).
+ *
  * The factory returns a handler that is auto-registered as `bulk_${collection}`
  * by {@link createSupabaseCrudFunctions}.
  *
@@ -164,6 +179,9 @@ export function createSupabaseBulkEntity(
     BulkRequestSchema,
     async (data: BulkEntityRequest, ctx): Promise<BulkResponse> => {
       const { uid, userRole, supabaseAdmin } = ctx;
+      // Status of each updated row as read by `readStored` (id → status), re-checked
+      // by `crud_bulk` under lock before any write.
+      const expectedStatuses: Record<string, string | null> = {};
 
       try {
         return await executeBulk({
@@ -177,6 +195,28 @@ export function createSupabaseBulkEntity(
           userRole,
           // Supabase's `crud_bulk` RPC mints ids server-side — skip the
           // client-side mint hook so the RPC owns the id space.
+          // Stored rows of the updated ids: their status decides each patch's
+          // schema. This read is outside the RPC transaction: the statuses read
+          // are sent to `crud_bulk`, which re-checks them under lock.
+          readStored: async (ids) => {
+            const { data: rows, error: readError } = await supabaseAdmin
+              .from(collection)
+              .select('*')
+              .in('id', [...ids]);
+            if (readError) {
+              throw new DoNotDevError(
+                `Failed to read rows for bulk: ${readError.message}`,
+                'internal'
+              );
+            }
+            const stored = new Map<string, Record<string, unknown>>();
+            for (const row of (rows ?? []) as Record<string, unknown>[]) {
+              const mapped = mapper.fromBackendRow(row) as Record<string, unknown>;
+              stored.set(String(mapped.id), mapped);
+              expectedStatuses[String(mapped.id)] = statusOf(mapped);
+            }
+            return stored;
+          },
           stampInsertMetadata: prepareInsertRow,
           stampUpdateMetadata: preparePatch,
           transact: async ({ inserts, updates, deletes }) => {
@@ -186,7 +226,14 @@ export function createSupabaseBulkEntity(
                 p_inserts: inserts.map((i) => i.row),
                 p_updates: updates.map((u) => ({ id: u.id, patch: u.patch })),
                 p_deletes: deletes,
+                p_expected_statuses: expectedStatuses,
               });
+            if (rpcError?.code === STATUS_CHANGED_SQLSTATE) {
+              throw new DoNotDevError(
+                `Bulk rejected, nothing written: ${rpcError.message}. Reload and retry.`,
+                'unavailable'
+              );
+            }
             if (rpcError) {
               throw new DoNotDevError(
                 `Failed to execute bulk: ${rpcError.message}`,

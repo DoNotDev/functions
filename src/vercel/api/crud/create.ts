@@ -2,7 +2,12 @@
 
 /**
  * @fileoverview Create entity API handler
- * @description Vercel API route for creating entities
+ * @description Vercel API route for creating entities.
+ *
+ * The request carries one schema (W22): the caller sends the one
+ * `prepareCreate` (core/schemas crud/create) picks (`draft` or `create`). A create
+ * without status gets `DEFAULT_STATUS_VALUE`; the parse output is written, never the
+ * raw payload.
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -11,6 +16,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 
+import { prepareCreate } from '@donotdev/core/server';
 import type { CreateEntityData } from '@donotdev/core/server';
 
 import { DoNotDevError, handleError } from '../../../shared/errorHandling.js';
@@ -20,10 +26,8 @@ import {
 } from '../../../shared/firebase.js';
 import { createMetadata } from '../../../shared/metadata.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
-import {
-  validateCollectionName,
-  validateDocument,
-} from '../../../shared/utils.js';
+import { writtenOf } from '../../../shared/crud/written.js';
+import { validateCollectionName } from '../../../shared/utils.js';
 
 export default async function handler(
   req: NextApiRequest,
@@ -47,23 +51,17 @@ export default async function handler(
     // W22: Validate collection name from client-supplied schema
     validateCollectionName(schema.metadata.collection);
 
-    // New records start as drafts unless the caller explicitly sets a status.
-    const status = payload.status ?? 'draft';
-
-    // Validate the document against the schema.
-    // Draft handling is schema-driven: `schemas.draft` must convert required
-    // fields into nullish/optional, so we still validate drafts.
-    const payloadForValidation = {
-      ...payload,
-      status,
-    };
-    validateDocument(payloadForValidation, schema);
+    // CRUD create rules (core/schemas crud/create), resulting status included.
+    // W22: the client supplies one schema, used for drafts and creates alike.
+    const written = writtenOf(
+      prepareCreate({ create: schema, draft: schema }, payload),
+      schema.metadata.collection,
+      'create'
+    );
 
     // Prepare the document for Firestore and add metadata
-    // Always ensure status is set
     const documentData = {
-      ...prepareForFirestore(payload),
-      status, // Ensure status is always present
+      ...prepareForFirestore(written),
       ...createMetadata(uid),
     };
 

@@ -20,6 +20,29 @@ import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 import { createBaseFunction } from '../baseFunction.js';
 import { AUTH_CONFIG } from '../config/constants.js';
 
+/** Claim keys users must not remove: access and identity integrity. */
+const BLOCKED_CLAIM_KEYS = new Set([
+  'admin',
+  'isAdmin',
+  'isSuper',
+  'isSuperAdmin',
+  'role',
+  'roles',
+  'permissions',
+  'superuser',
+  'moderator',
+  'staff',
+  'elevated',
+  'plan',
+  'tier',
+  'subscription',
+  'provider',
+  'providers',
+  'sub',
+  'iss',
+  'aud',
+]);
+
 const removeCustomClaimsSchema = v.object({
   claimsToRemove: v.pipe(
     v.array(v.string()),
@@ -53,6 +76,13 @@ async function removeCustomClaimsLogic(
 ) {
   const { claimsToRemove } = data;
 
+  const blocked = claimsToRemove.filter((key) => BLOCKED_CLAIM_KEYS.has(key));
+  if (blocked.length > 0) {
+    throw new Error(
+      `Protected claims cannot be removed: ${blocked.join(', ')}`
+    );
+  }
+
   const user = await getFirebaseAdminAuth().getUser(context.uid);
   const currentClaims = user.customClaims || {};
 
@@ -68,7 +98,7 @@ async function removeCustomClaimsLogic(
 }
 
 /**
- * Removes user's custom claims
+ * Removes user's custom claims, except protected access and identity claims.
  * Base function handles all common concerns automatically
  *
  * @version 0.1.0

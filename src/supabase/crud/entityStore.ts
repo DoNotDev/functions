@@ -10,20 +10,39 @@
  * database policy hides them from non-admin users; the service role bypasses that
  * policy, so the store re-applies it on reads).
  *
- * No role or visibility masking: the caller is trusted server code. Atomic
- * multi-table writes stay in SQL functions (`client.rpc`).
+ * No role or visibility masking: the caller is trusted server code. Writes are
+ * still validated: each insert row / patch against the schema of its resulting
+ * status (the CRUD rules: `create`, `draft` or `update`; a patch reads the matched
+ * rows first, their stored status counts), and the parse output is what is written.
+ * A caller-chosen insert `id` is kept. Insert and patch types come from the descriptor (`CreateInput`,
+ * `DraftInput`, `UpdatePatch`: write classes `program`, `user`, `derived`).
+ * Atomic multi-table writes stay in SQL functions (`client.rpc`).
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.5.0
  * @author AMBROISE PARK Consulting
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { HIDDEN_STATUSES } from '@donotdev/core/server';
-import type { AnyEntity, InferEntityRow } from '@donotdev/core/server';
+
+import {
+  createSchemas,
+  HIDDEN_STATUSES,
+  prepareCreate,
+  prepareRemove,
+  prepareUpdate,
+} from '@donotdev/core/server';
+import type {
+  AnyEntity,
+  CreateInput,
+  DraftInput,
+  InferEntityRow,
+  UpdatePatch,
+} from '@donotdev/core/server';
 import { createEntityAwareMapper } from '@donotdev/supabase/server';
 
+import { writtenOf } from '../../shared/crud/written.js';
 import { DoNotDevError } from '../../shared/utils.js';
 
 /** Filter operators, same vocabulary as the list handler and the client CRUD. */
@@ -53,21 +72,55 @@ export interface EntityStoreQuery {
   includeHidden?: boolean;
 }
 
-/** Values written to a row: any subset of its fields; `null` clears a nullable column. */
+/**
+ * Loose write values: any subset of the row's fields; `null` clears a nullable column.
+ * Default insert / patch type of {@link EntityStore}; `createEntityStore` narrows
+ * them to the descriptor types.
+ */
 export type EntityStoreValues<Row> = { [K in keyof Row]?: Row[K] | null };
 
-/** Entity-aware CRUD bound to one entity and one Supabase client. */
-export interface EntityStore<Row> {
+/**
+ * Insert row of an entity store: a create, or a draft (`status: 'draft'`), with an
+ * optional caller-chosen `id` (write class never, but a minted id is allowed on
+ * insert: other rows may reference it).
+ */
+export type EntityStoreInsert<E extends AnyEntity> = (CreateInput<E> | DraftInput<E>) & { id?: string };
+
+/** Patch of an entity store: an update, or a draft write (`status: 'draft'`). */
+export type EntityStorePatch<E extends AnyEntity> = UpdatePatch<E> | DraftInput<E>;
+
+/**
+ * Entity-aware CRUD bound to one entity and one Supabase client.
+ *
+ * @template Row - Stored row
+ * @template Insert - Insert row type
+ * @template Patch - Update patch type
+ */
+export interface EntityStore<Row, Insert = EntityStoreValues<Row>, Patch = EntityStoreValues<Row>> {
   /** Rows matching the query. */
   list(query?: EntityStoreQuery): Promise<Row[]>;
   /** The single row matching the query, or null; more than one row is an error. */
   find(query: EntityStoreQuery): Promise<Row | null>;
   /** Row by id, or null (hidden rows only with `includeHidden`). */
   get(id: string, options?: Pick<EntityStoreQuery, 'includeHidden' | 'select'>): Promise<Row | null>;
-  /** Inserts rows and returns them as stored (database defaults and triggers applied). */
-  insert(values: readonly EntityStoreValues<Row>[]): Promise<Row[]>;
-  /** Updates the rows matching `where` (hidden rows included) and returns them as stored. */
-  update(where: readonly EntityStoreCondition[], patch: EntityStoreValues<Row>): Promise<Row[]>;
+  /**
+   * Validates and inserts rows (CRUD create rules, `prepareCreate`); returns them as
+   * stored (database defaults and triggers applied). Unknown fields are logged, not
+   * written. A row's string `id` is kept (a minted id other rows reference); without
+   * one the database mints it.
+   */
+  insert(values: readonly Insert[]): Promise<Row[]>;
+  /**
+   * Validates the patch against each row matching `where` (hidden rows included; CRUD
+   * update rules, `prepareUpdate` on each stored row), then updates those rows; returns
+   * them as stored. Unknown fields are logged, not written.
+   */
+  update(where: readonly EntityStoreCondition[], patch: Patch): Promise<Row[]>;
+  /**
+   * Logical delete (CRUD rule 3) of the rows matching `where`: the update
+   * `{ status: 'deleted' }`. The hard delete is not part of the store.
+   */
+  remove(where: readonly EntityStoreCondition[]): Promise<void>;
 }
 
 const SAFE_FIELD_NAME = /^[a-zA-Z][a-zA-Z0-9_]*$/;
@@ -145,7 +198,8 @@ function applyCondition<Q extends Filterable>(query: Q, column: string, operator
  *
  * @param client - Supabase client the store runs with (service role in Edge Functions)
  * @param entity - Entity from `defineEntity()`; its collection is the table
- * @returns Store whose rows use the entity field names
+ * @returns Store whose rows use the entity field names; writes validated per status
+ * @throws DoNotDevError `invalid-argument` on an unknown field or a write that fails its schema
  *
  * @example
  * ```typescript
@@ -157,11 +211,15 @@ function applyCondition<Q extends Filterable>(query: Q, column: string, operator
  * const rows = await products.list({ where: [['id', 'in', ids]], select: ['name', 'sku'] });
  * ```
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.5.0
  */
-export function createEntityStore<E extends AnyEntity>(client: SupabaseClient, entity: E): EntityStore<InferEntityRow<E>> {
+export function createEntityStore<E extends AnyEntity>(
+  client: SupabaseClient,
+  entity: E
+): EntityStore<InferEntityRow<E>, EntityStoreInsert<E>, EntityStorePatch<E>> {
   type Row = InferEntityRow<E>;
+  const schemas = createSchemas(entity);
   const fieldNames = Object.keys(entity.fields);
   const known = new Set(fieldNames);
   const mapper = createEntityAwareMapper(fieldNames);
@@ -184,6 +242,17 @@ export function createEntityStore<E extends AnyEntity>(client: SupabaseClient, e
     }
     return out;
   };
+
+  const insertRow = (row: object): Record<string, unknown> => {
+    const values = row as Record<string, unknown>;
+    const written = writtenOf(prepareCreate(schemas, values), table, 'insert');
+    // The rules never write `id`: a caller-chosen id is kept.
+    return toColumns(typeof values.id === 'string' ? { ...written, id: values.id } : written);
+  };
+
+  /** The patch as written to one stored row (CRUD update rules). */
+  const patchFor = (patch: Record<string, unknown>, stored: Record<string, unknown>): Record<string, unknown> =>
+    writtenOf(prepareUpdate(schemas, { id: String(stored.id), patch, stored }), table, 'update');
 
   const fromRows = (data: unknown): Row[] => ((data ?? []) as Record<string, unknown>[]).map((row) => mapper.fromBackendRow(row) as Row);
 
@@ -224,7 +293,7 @@ export function createEntityStore<E extends AnyEntity>(client: SupabaseClient, e
     async insert(values) {
       if (values.length === 0) return [];
       const { data, error } = await from()
-        .insert(values.map((v) => toColumns(v as Record<string, unknown>)))
+        .insert(values.map(insertRow))
         .select('*');
       if (error) fail('insert', error);
       return fromRows(data);
@@ -232,9 +301,29 @@ export function createEntityStore<E extends AnyEntity>(client: SupabaseClient, e
 
     async update(where, patch) {
       if (where.length === 0) throw new DoNotDevError(`${entity.name}: update without a condition`, 'invalid-argument');
-      const { data, error } = await filtered(from().update(toColumns(patch as Record<string, unknown>)), where, true).select('*');
+      const values = patch as Record<string, unknown>;
+      // Each stored row gives the patch its status and a published draft its record.
+      const targets = await list({ where, includeHidden: true });
+      if (targets.length === 0) return [];
+      let written: Record<string, unknown> = {};
+      for (const row of targets) written = patchFor(values, row as Record<string, unknown>);
+      // Only the validated rows: `where` again (concurrency guards) and their ids.
+      const ids = targets.map((row) => (row as Record<string, unknown>).id);
+      const { data, error } = await filtered(from().update(toColumns(written)), [...where, ['id', 'in', ids]], true).select('*');
       if (error) fail('update', error);
       return fromRows(data);
+    },
+
+    async remove(where) {
+      if (where.length === 0) throw new DoNotDevError(`${entity.name}: remove without a condition`, 'invalid-argument');
+      const targets = await list({ where, includeHidden: true, select: ['id'] });
+      const first = targets[0] as Record<string, unknown> | undefined;
+      if (!first) return;
+      // CRUD rule 3 (core/schemas crud/update `prepareRemove`): the same patch for every row.
+      const written = writtenOf(prepareRemove(schemas, String(first.id)), table, 'remove');
+      const ids = targets.map((row) => (row as Record<string, unknown>).id);
+      const { error } = await filtered(from().update(toColumns(written)), [...where, ['id', 'in', ids]], true).select('id');
+      if (error) fail('remove', error);
     },
   };
 }

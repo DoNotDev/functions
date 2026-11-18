@@ -11,11 +11,7 @@
 
 import * as v from 'valibot';
 
-import {
-  filterVisibleFields,
-  hasRoleAccess,
-  HIDDEN_STATUSES,
-} from '@donotdev/core/server';
+import { filterVisibleFields, isReadableBy } from '@donotdev/core/server';
 import type { EntityOwnershipConfig, UserRole } from '@donotdev/core/server';
 import {
   createEntityAwareMapper,
@@ -67,13 +63,8 @@ export function createSupabaseGetEntity(
         throw new DoNotDevError('Entity not found', 'not-found');
       }
 
-      const isAdmin = hasRoleAccess(userRole, 'admin');
-
-      // Hide drafts/deleted from non-admin users (security: hidden statuses never reach public)
-      if (
-        !isAdmin &&
-        (HIDDEN_STATUSES as readonly string[]).includes(row.status)
-      ) {
+      // CRUD rule 4 (core/schemas crud/read): hidden statuses never reach non-admins
+      if (!isReadableBy(row, userRole)) {
         throw new DoNotDevError('Entity not found', 'not-found');
       }
 

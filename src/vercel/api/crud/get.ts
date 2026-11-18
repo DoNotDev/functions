@@ -11,12 +11,11 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-import { HIDDEN_STATUSES } from '@donotdev/core/server';
+import { filterVisibleFields, isReadableBy } from '@donotdev/core/server';
 import type { GetEntityData } from '@donotdev/core/server';
 
 import { DoNotDevError, handleError } from '../../../shared/errorHandling.js';
 import { transformFirestoreData } from '../../../shared/firebase.js';
-import { filterVisibleFields } from '../../../shared/schema.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import { validateCollectionName } from '../../../shared/utils.js';
 
@@ -60,9 +59,9 @@ export default async function handler(
       handleError(new Error('Document not found'));
     }
 
-    // Hide drafts/deleted (Vercel routes treat all requests as non-admin)
+    // CRUD rule 4 (core/schemas crud/read); Vercel routes treat all requests as unauthenticated
     const docData = doc.data();
-    if ((HIDDEN_STATUSES as readonly string[]).includes(docData?.status)) {
+    if (!isReadableBy(docData, undefined)) {
       handleError(new Error('Document not found'));
     }
 
@@ -72,8 +71,8 @@ export default async function handler(
       ...docData,
     });
 
-    // Filter visible fields based on schema
-    const filteredData = filterVisibleFields(documentData, schema, false);
+    // Core visibility rule; the verified caller is treated as 'user' (non-admin)
+    const filteredData = filterVisibleFields(documentData, schema, 'user');
 
     return res.status(200).json(filteredData);
   } catch (error) {

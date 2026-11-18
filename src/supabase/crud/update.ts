@@ -12,11 +12,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import * as v from 'valibot';
 
+import { prepareUpdate } from '@donotdev/core/server';
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
 import { defaultFieldMapper } from '@donotdev/supabase/server';
 
 import { updateMetadata } from '../../shared/metadata.js';
-import { DoNotDevError, validateDocument } from '../../shared/utils.js';
+import { writtenOf } from '../../shared/crud/written.js';
+import { DoNotDevError } from '../../shared/utils.js';
 import { createSupabaseHandler } from '../baseFunction.js';
 import { checkIdempotency, storeIdempotency } from '../utils/idempotency.js';
 
@@ -95,8 +97,13 @@ async function checkUniqueKeys(
 /**
  * Create a Supabase Edge Function handler for updating an entity.
  *
+ * CRUD update rules (`prepareUpdate`, core/schemas crud/update), as on the client: the
+ * stored row gives the patch its status and a published draft its whole record. The
+ * rules' `written` (parsed sent keys) is stored, never the raw payload.
+ *
  * @param collection - The Supabase table name
- * @param documentSchema - The Valibot schema for document validation
+ * @param documentSchema - The update schema (`createSchemas(entity).update`): validates what a non-draft update writes (the whole merged row when it enters a visible status)
+ * @param draftDocumentSchema - The draft schema (`createSchemas(entity).draft`): validates the resulting row of a draft
  * @param requiredRole - Minimum role required for this operation
  * @returns A `(req: Request) => Promise<Response>` handler for Deno.serve
  */
@@ -104,6 +111,8 @@ export function createSupabaseUpdateEntity(
   collection: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
+  draftDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole
 ) {
   const requestSchema = v.object({
@@ -149,8 +158,13 @@ export function createSupabaseUpdateEntity(
         ...(mapper.fromBackendRow(existing) as Record<string, unknown>),
         ...payload,
       };
-      const status = merged.status ?? existing.status;
-      const isDraft = status === 'draft';
+      // CRUD update rules (core/schemas crud/update) on the stored row.
+      const stored = mapper.fromBackendRow(existing) as Record<string, unknown>;
+      const prepared = prepareUpdate(
+        { draft: draftDocumentSchema, update: documentSchema },
+        { id, patch: payload, stored }
+      );
+      const isDraft = prepared.schemaKey === 'draft';
 
       // Check unique keys if schema has metadata with uniqueKeys
       const schemaWithMeta = documentSchema as {
@@ -169,25 +183,13 @@ export function createSupabaseUpdateEntity(
         );
       }
 
-      // Validate merged document (skip for drafts)
-      if (!isDraft) {
-        validateDocument(merged, documentSchema);
-      }
+      const written = writtenOf(prepared, collection, 'update');
 
       const metadata = updateMetadata(uid);
       const snakeMetadata = mapper.toBackendKeys(
         metadata as Record<string, unknown>
       );
-
-      const {
-        createdAt,
-        updatedAt,
-        created_at,
-        updated_at,
-        id: _id,
-        ...payloadWithoutTimestamps
-      } = payload;
-      const snakePayload = mapper.toBackendKeys(payloadWithoutTimestamps);
+      const snakePayload = mapper.toBackendKeys(written);
 
       // Update document (DB sets updated_at via trigger)
       const { data: updated, error } = await supabaseAdmin

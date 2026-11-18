@@ -9,7 +9,6 @@
  * @author AMBROISE PARK Consulting
  */
 
-import * as v from 'valibot';
 
 import { DoNotDevError } from '@donotdev/core/server';
 import type { OAuthPartnerId, UserRole } from '@donotdev/core/server';
@@ -107,48 +106,6 @@ export function createErrorResponse(error: unknown): {
       message: 'An unexpected error occurred',
     },
   };
-}
-
-/**
- * Validates document data
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export function validateDocument(
-  data: unknown,
-  schema?: v.GenericSchema
-): void {
-  if (!data || typeof data !== 'object') {
-    throw new Error('Invalid document data');
-  }
-
-  if (Array.isArray(data)) {
-    throw new Error('Document data cannot be an array');
-  }
-
-  // Run Valibot schema validation when a schema is provided
-  if (schema) {
-    try {
-      v.parse(schema, data);
-    } catch (error) {
-      if (v.isValiError(error)) {
-        const messages = error.issues
-          .map(
-            (issue) =>
-              `${issue.path?.map((p) => p.key).join('.') || 'root'}: ${issue.message}`
-          )
-          .join('; ');
-        throw new DoNotDevError(
-          `Validation failed: ${messages}`,
-          'invalid-argument',
-          { details: { validationErrors: error.issues } }
-        );
-      }
-      throw error;
-    }
-  }
 }
 
 /**

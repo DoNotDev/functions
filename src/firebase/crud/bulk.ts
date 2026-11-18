@@ -21,7 +21,7 @@ import type {
 } from 'firebase-functions/v2/https';
 import type * as v from 'valibot';
 
-import { BulkRequestSchema, DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
+import { BulkRequestSchema } from '@donotdev/core/server';
 import type {
   BulkRequest,
   BulkResponse,
@@ -33,6 +33,7 @@ import {
   createMetadata,
   executeBulk,
   prepareForFirestore,
+  transformFirestoreData,
   updateMetadata,
 } from '../../shared/index.js';
 import { createBaseFunction } from '../baseFunction.js';
@@ -124,16 +125,28 @@ export function bulkEntityLogicFactory(
       userRole,
       // Mint ids via Firestore's `doc()` — gives us stable ids across retry
       // of the transaction callback (Firestore may run it more than once).
-      mintInsertId: () => col().doc().id,
-      stampInsertMetadata: (row, creatorUid) => {
-        const status =
-          (row.status as string | undefined) ?? DEFAULT_STATUS_VALUE;
-        return {
-          ...prepareForFirestore(row),
-          status,
-          ...createMetadata(creatorUid),
-        };
+      // Stored rows of the updated ids: their status decides each patch's schema.
+      readStored: async (ids) => {
+        const snapshots = await getFirebaseAdminFirestore().getAll(
+          ...ids.map((id) => col().doc(id))
+        );
+        const rows = new Map<string, Record<string, unknown>>();
+        for (const snapshot of snapshots) {
+          if (snapshot.exists) {
+            rows.set(
+              snapshot.id,
+              transformFirestoreData(snapshot.data() as Record<string, unknown>)
+            );
+          }
+        }
+        return rows;
       },
+      mintInsertId: () => col().doc().id,
+      // The row carries its status: the CRUD create rules set it (prepareCreate).
+      stampInsertMetadata: (row, creatorUid) => ({
+        ...prepareForFirestore(row),
+        ...createMetadata(creatorUid),
+      }),
       stampUpdateMetadata: (patch, editorUid) => ({
         ...prepareForFirestore(patch),
         ...updateMetadata(editorUid),

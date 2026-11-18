@@ -42,6 +42,7 @@ const BLOCKED_CLAIM_KEYS = new Set([
   'elevated',
   'plan',
   'tier',
+  'subscription',
   'provider',
   'providers',
   'sub',
@@ -123,10 +124,11 @@ export function createSetCustomClaims(options: SetCustomClaimsOptions) {
       >;
       const updatedClaims = { ...existingClaims, ...data.customClaims };
 
-      // Update app_metadata
+      // Supabase merges app_metadata server-side. Send only allowed changes so a
+      // stale read cannot replay subscription/role over a concurrent trusted update.
       const { error: updateError } =
         await ctx.supabaseAdmin.auth.admin.updateUserById(ctx.uid, {
-          app_metadata: updatedClaims,
+          app_metadata: data.customClaims,
         });
       if (updateError) throw updateError;
 

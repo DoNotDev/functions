@@ -45,6 +45,13 @@ export type {
 // Custom StripeOrder entry points (app request shape, own StripeSessionProvider)
 export { createCheckoutAlgorithm } from '../shared/billing/createCheckout.js';
 export type { StripeSessionProvider } from '../shared/billing/createCheckout.js';
+/** Read-only verification for authenticated app handlers; fulfillment stays in webhooks. */
+export { verifyOrderCheckoutAlgorithm } from '../shared/billing/verifyOrderCheckout.js';
+/** Separate read dependencies; existing checkout providers need no new methods. */
+export type {
+  OrderCheckoutBinding,
+  VerifyOrderCheckoutDependencies,
+} from '../shared/billing/verifyOrderCheckout.js';
 export { STRIPE_API_VERSION_PIN } from '../shared/billing/apiVersion.js';
 export { createCancelSubscription } from './billing/cancelSubscription.js';
 export { createChangePlan } from './billing/changePlan.js';

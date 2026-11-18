@@ -21,3 +21,4 @@ export {
   type PreparedUpdate,
   type BulkRowSchema,
 } from './bulkCore.js';
+export { writtenOf } from './written.js';

@@ -23,7 +23,6 @@ import * as v from 'valibot';
 
 import {
   BulkCollisionError,
-  BulkInsertSchema,
   BulkRequestSchema,
 } from '@donotdev/core/server';
 import type { BulkRequest, BulkResponse } from '@donotdev/core/server';
@@ -33,7 +32,10 @@ import {
   DoNotDevError,
   handleError,
 } from '../../../shared/errorHandling.js';
-import { prepareForFirestore } from '../../../shared/firebase.js';
+import {
+  prepareForFirestore,
+  transformFirestoreData,
+} from '../../../shared/firebase.js';
 import { createMetadata, updateMetadata } from '../../../shared/metadata.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
 import { validateCollectionName } from '../../../shared/utils.js';
@@ -44,8 +46,12 @@ import { validateCollectionName } from '../../../shared/utils.js';
  * structural checks already enforced by {@link BulkRequestSchema}. Both
  * inserts and update patches are opaque objects at this layer.
  */
-const PASSTHROUGH_INSERT_SCHEMA = BulkInsertSchema;
-const PASSTHROUGH_PATCH_SCHEMA = v.record(v.string(), v.unknown());
+// Loose object schemas: no entity here, so the CRUD rules validate nothing beyond the
+// wire shape and report no unknown field (core/schemas crud/prepared `unknownKeysOf`).
+const PASSTHROUGH_INSERT_SCHEMA = v.looseObject({});
+// An object schema (no declared entries): a patch entering a visible status is
+// checked whole (`wholeDocument` needs `entries`), which here accepts any object.
+const PASSTHROUGH_PATCH_SCHEMA = v.looseObject({});
 
 /**
  * HTTP handler for `POST /api/crud/:collection/bulk`.
@@ -121,6 +127,7 @@ export default async function handler(
       // the structural row schemas so per-row validation is a no-op beyond
       // what `BulkRequestSchema` already enforces.
       createSchema: PASSTHROUGH_INSERT_SCHEMA,
+      draftCreateSchema: PASSTHROUGH_INSERT_SCHEMA,
       updateSchema: PASSTHROUGH_PATCH_SCHEMA,
       // URL-routed handler has no entity ACL config — the per-bucket ACL in
       // `executeBulk` still enforces "populated bucket requires role", so we
@@ -129,6 +136,22 @@ export default async function handler(
       access: { create: 'user', update: 'user', delete: 'user' },
       uid,
       userRole: 'user',
+      // Stored rows of the updated ids (the status rule reads their status).
+      readStored: async (ids) => {
+        const db = getFirebaseAdminFirestore();
+        const col = db.collection(collection as string);
+        const snapshots = await db.getAll(...ids.map((id) => col.doc(id)));
+        const rows = new Map<string, Record<string, unknown>>();
+        for (const snapshot of snapshots) {
+          if (snapshot.exists) {
+            rows.set(
+              snapshot.id,
+              transformFirestoreData(snapshot.data() as Record<string, unknown>)
+            );
+          }
+        }
+        return rows;
+      },
       mintInsertId: () =>
         getFirebaseAdminFirestore()
           .collection(collection as string)

@@ -2,7 +2,14 @@
 
 /**
  * @fileoverview Update entity API handler
- * @description Vercel API route for updating entities
+ * @description Vercel API route for updating entities.
+ *
+ * The request carries one schema (W22): the caller sends the one
+ * `prepareUpdate` (core/schemas crud/update) picks. The server applies
+ * the same status rule to choose what it checks (draft: the merged document; an
+ * update entering a visible status, `updateCheck`: the whole merged document;
+ * other: the patch with its id) and writes the parse output of the sent keys, never
+ * the raw payload.
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -11,7 +18,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-import { DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
+import { prepareUpdate } from '@donotdev/core/server';
 import type { UpdateEntityData } from '@donotdev/core/server';
 
 import { DoNotDevError, handleError } from '../../../shared/errorHandling.js';
@@ -21,10 +28,8 @@ import {
 } from '../../../shared/firebase.js';
 import { updateMetadata } from '../../../shared/metadata.js';
 import { verifyAuthToken } from '../../../shared/utils/internal/auth.js';
-import {
-  validateCollectionName,
-  validateDocument,
-} from '../../../shared/utils.js';
+import { writtenOf } from '../../../shared/crud/written.js';
+import { validateCollectionName } from '../../../shared/utils.js';
 
 export default async function handler(
   req: NextApiRequest,
@@ -62,21 +67,18 @@ export default async function handler(
       handleError(new Error('Document not found'));
     }
 
-    // Merge current data with payload to determine resulting status
-    const currentData = currentDoc.data() || {};
-    const mergedData = { ...currentData, ...payload };
-    const resultingStatus = mergedData.status ?? DEFAULT_STATUS_VALUE;
-    const isDraft = resultingStatus === 'draft';
-
-    // Validate the document against the schema
-    // Skip validation for drafts - required fields can be incomplete
-    if (!isDraft) {
-      validateDocument(mergedData, schema);
-    }
+    // CRUD update rules (core/schemas crud/update) on the stored row (application form).
+    // W22: the client supplies one schema, used for drafts and updates alike.
+    const stored = transformFirestoreData(currentDoc.data() || {});
+    const written = writtenOf(
+      prepareUpdate({ draft: schema, update: schema }, { id, patch: payload, stored }),
+      schema.metadata.collection,
+      'update'
+    );
 
     // Prepare the document for Firestore and add metadata
     const documentData = {
-      ...prepareForFirestore(payload),
+      ...prepareForFirestore(written),
       ...updateMetadata(uid),
     };
 

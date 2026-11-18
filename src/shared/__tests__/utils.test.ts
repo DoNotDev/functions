@@ -44,7 +44,6 @@ import {
   getUserRole,
   createSuccessResponse,
   createErrorResponse,
-  validateDocument,
   validateCollectionName,
 } from '../utils';
 import { validateStripeEnvironment } from '../billing/stripeClient';
@@ -163,35 +162,6 @@ describe('createErrorResponse', () => {
     expect(result.success).toBe(false);
     expect(result.error.code).toBe('internal');
     expect(result.error.message).toBe('An unexpected error occurred');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// validateDocument
-// ---------------------------------------------------------------------------
-
-describe('validateDocument', () => {
-  it('accepts valid object data', () => {
-    expect(() => validateDocument({ name: 'test' })).not.toThrow();
-  });
-
-  it('rejects null', () => {
-    expect(() => validateDocument(null)).toThrow('Invalid document data');
-  });
-
-  it('rejects undefined', () => {
-    expect(() => validateDocument(undefined)).toThrow('Invalid document data');
-  });
-
-  it('rejects non-object', () => {
-    expect(() => validateDocument('string')).toThrow('Invalid document data');
-    expect(() => validateDocument(123)).toThrow('Invalid document data');
-  });
-
-  it('rejects arrays', () => {
-    expect(() => validateDocument([1, 2])).toThrow(
-      'Document data cannot be an array'
-    );
   });
 });
 

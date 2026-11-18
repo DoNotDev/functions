@@ -16,7 +16,7 @@ import type {
 } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 
-import { DEFAULT_STATUS_VALUE } from '@donotdev/core/server';
+import { prepareUpdate } from '@donotdev/core/server';
 import type { UserRole, UniqueKeyDefinition } from '@donotdev/core/server';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
@@ -25,7 +25,8 @@ import {
   transformFirestoreData,
 } from '../../shared/index.js';
 import { updateMetadata } from '../../shared/index.js';
-import { DoNotDevError, validateDocument } from '../../shared/utils.js';
+import { writtenOf } from '../../shared/crud/written.js';
+import { DoNotDevError } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
 
@@ -136,13 +137,24 @@ async function checkUniqueKeysForUpdate(
  * Generic business logic for updating entities
  * Base function handles: validation, auth, rate limiting, monitoring
  *
- * @version 0.1.0
+ * Status rule: `prepareUpdate` (core/schemas crud/update). An update
+ * entering a visible status (`updateCheck`, e.g. a draft published) is checked
+ * whole: the merged document against the update schema (`validateWholeDocument`). The
+ * parse output of the sent keys is written, never the raw payload.
+ *
+ * @param collection - The Firestore collection name
+ * @param documentSchema - The update schema: validates `{ ...payload, id }` of a non-draft update (the whole merged document when it enters a visible status)
+ * @param draftDocumentSchema - The draft schema: validates the merged document of a draft
+ * @returns The callable logic (exported for unit tests)
+ *
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-function updateEntityLogicFactory(
+export function updateEntityLogicFactory(
   collection: string,
-  documentSchema: v.GenericSchema
+  documentSchema: v.GenericSchema,
+  draftDocumentSchema: v.GenericSchema
 ) {
   return async function updateEntityLogic(
     data: UpdateEntityRequest,
@@ -209,18 +221,22 @@ function updateEntityLogicFactory(
 
     // Check if the document exists
     const doc = await docRef.get();
-    if (!doc.exists) {
+    const storedData = doc.data();
+    if (!doc.exists || storedData === undefined) {
       throw new DoNotDevError('Entity not found', 'not-found');
     }
 
     // Get the current data and merge with the update payload.
     // Note: simple spread merge — concurrent partial updates use last-write-wins, no conflict detection.
-    const currentData = transformFirestoreData(doc.data());
+    const currentData = transformFirestoreData(storedData);
     const mergedData = { ...currentData, ...payload };
 
-    // Determine resulting status (default to draft if not set)
-    const resultingStatus = mergedData.status ?? DEFAULT_STATUS_VALUE;
-    const isDraft = resultingStatus === 'draft';
+    // CRUD update rules (core/schemas crud/update) on the stored row, as on the client.
+    const prepared = prepareUpdate(
+      { draft: draftDocumentSchema, update: documentSchema },
+      { id, patch: payload, stored: currentData }
+    );
+    const isDraft = prepared.schemaKey === 'draft';
 
     // Check unique keys if schema has metadata with uniqueKeys
     // Only checks fields that are being updated
@@ -240,17 +256,14 @@ function updateEntityLogicFactory(
       );
     }
 
-    // Validate the merged document against the schema
-    // Skip validation for drafts - required fields can be incomplete
-    if (!isDraft) {
-      validateDocument(mergedData, documentSchema);
-    }
+    // The rules' `written` (parsed sent keys), never the raw payload.
+    const written = writtenOf(prepared, collection, 'update');
 
     // Normalize unique key fields to lowercase for case-insensitive storage
     const normalizedPayload =
       uniqueKeys && uniqueKeys.length > 0
-        ? normalizePayloadForUniqueKeys(payload, uniqueKeys)
-        : payload;
+        ? normalizePayloadForUniqueKeys(written, uniqueKeys)
+        : written;
 
     // Prepare the update data for Firestore and add metadata
     const updateData = {
@@ -289,7 +302,8 @@ function updateEntityLogicFactory(
 /**
  * Generic function to update entities in any Firestore collection
  * @param collection - The Firestore collection name
- * @param documentSchema - The Valibot schema for document validation
+ * @param documentSchema - The update schema (`createSchemas(entity).update`): validates what a non-draft update writes
+ * @param draftDocumentSchema - The draft schema (`createSchemas(entity).draft`): validates the resulting document of a draft
  * @param requiredRole - Minimum role required for this operation
  * @param customSchema - Optional custom request schema
  * @returns Firebase callable function
@@ -298,6 +312,8 @@ export const updateEntity = (
   collection: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   documentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
+  draftDocumentSchema: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>,
   requiredRole: UserRole,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- why: accepts schemas of any output type; v.GenericSchema would make InferOutput unknown for callers (breaking)
   customSchema?: v.BaseSchema<unknown, any, v.BaseIssue<unknown>>
@@ -315,7 +331,7 @@ export const updateEntity = (
     CRUD_CONFIG,
     requestSchema,
     'update_entity',
-    updateEntityLogicFactory(collection, documentSchema),
+    updateEntityLogicFactory(collection, documentSchema, draftDocumentSchema),
     requiredRole
   );
 };

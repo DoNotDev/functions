@@ -16,7 +16,7 @@ import * as v from 'valibot';
 import {
   filterVisibleFields,
   hasRoleAccess,
-  HIDDEN_STATUSES,
+  hiddenStatusesFor,
 } from '@donotdev/core/server';
 import type {
   EntityOwnershipConfig,
@@ -217,9 +217,10 @@ export function createSupabaseListEntities(
         .from(collection)
         .select(selectFields, { count: 'exact' });
 
-      // Filter out hidden statuses for non-admin users
-      if (!isAdmin) {
-        query = query.not('status', 'in', [...HIDDEN_STATUSES]);
+      // CRUD rule 4 (core/schemas crud/read): hidden statuses never reach non-admins
+      const hidden = hiddenStatusesFor(userRole);
+      if (hidden.length > 0) {
+        query = query.not('status', 'in', [...hidden]);
       }
 
       // Ownership: when set and not admin, listCard = public condition, list = mine filter

@@ -19,8 +19,10 @@ vi.mock('../../shared/utils/internal/auth.js', () => ({
   verifyAuthToken: vi.fn(() => Promise.resolve('user-1')),
 }));
 
-// Collection-name validator: accept everything in tests.
-vi.mock('../../shared/utils.js', () => ({
+// Collection-name validator: accept everything in tests (write helpers stay real).
+vi.mock('../../shared/utils.js', async (importOriginal) => ({
+  pickWritten: (await importOriginal<typeof import('../../shared/utils.js')>()).pickWritten,
+  wholeDocument: (await importOriginal<typeof import('../../shared/utils.js')>()).wholeDocument,
   validateCollectionName: vi.fn(),
   DoNotDevError: class DoNotDevError extends Error {
     code: string;
@@ -102,6 +104,14 @@ vi.mock('@donotdev/firebase/server', () => {
     getFirebaseAdminFirestore: () => ({
       collection,
       runTransaction,
+      // Stored rows read before validation (status rule)
+      getAll: vi.fn(async (...refs: any[]) =>
+        refs.map((ref) => ({
+          exists: existingDocIds.has(ref.id),
+          id: ref.id,
+          data: () => ({}),
+        }))
+      ),
     }),
   };
 });
@@ -249,8 +259,8 @@ describe('vercel bulk handler — collision rejection', () => {
 });
 
 describe('vercel bulk handler — validation failure', () => {
-  it('rolls back when an update targets a non-existent doc', async () => {
-    // `u1` not in existingDocIds → tx.get returns `exists: false` → throw.
+  it('rejects an update of a non-existent doc before any write', async () => {
+    // `u1` not in existingDocIds → the stored-row read finds nothing → not-found.
     existingDocIds = new Set();
     mintedIds = ['new-1'];
 
@@ -265,10 +275,8 @@ describe('vercel bulk handler — validation failure', () => {
     await handler(req, res);
 
     expect(res._status).toBe(500);
-    // No writes issued — existence check runs before any tx.set/update/delete.
-    expect(txSpy!.set).not.toHaveBeenCalled();
-    expect(txSpy!.update).not.toHaveBeenCalled();
-    expect(txSpy!.delete).not.toHaveBeenCalled();
+    // No transaction opened: the stored rows are read before validation.
+    expect(txSpy).toBeUndefined();
   });
 
   it('rejects structurally invalid body (ACL-equivalent schema check)', async () => {

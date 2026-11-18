@@ -9,11 +9,16 @@
  * @author AMBROISE PARK Consulting
  */
 
+import * as v from 'valibot';
+
+import { SubscriptionClaimsSchema } from '@donotdev/core/server';
 import type { BillingAuthProvider, SubscriptionUpdate } from '@donotdev/core/server';
 
 /**
  * Platform-agnostic subscription update using dependency injection
  * Works on Firebase Functions, Vercel, AWS Lambda, etc.
+ * Validates canonical auth claims; one-time payments may have no billing customer.
+ * Billing identifiers are preserved when supplied, never fabricated from a user ID.
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -31,26 +36,17 @@ export async function updateUserSubscription(
     throw new Error('Invalid subscription data: missing tier or status');
   }
 
-  // G57: Warn when customerId is undefined — falling back to userId loses the
-  // Stripe customer ID, which makes future Stripe API calls unreliable.
-  if (!subscriptionData.customerId) {
-    console.warn(
-      `[updateUserSubscription] customerId is undefined for user ${userId}. ` +
-        `Falling back to userId. This may cause issues with Stripe API calls.`
-    );
-  }
-
-  const subscriptionClaims = {
+  const subscriptionClaims = v.parse(SubscriptionClaimsSchema, {
     tier: subscriptionData.tier,
-    subscriptionId: subscriptionData.subscriptionId || null,
-    customerId: subscriptionData.customerId || userId,
+    subscriptionId: subscriptionData.subscriptionId ?? null,
+    customerId: subscriptionData.customerId ?? null,
     status: subscriptionData.status,
     // Keep as ISO string - no conversion needed
     subscriptionEnd: subscriptionData.subscriptionEnd,
-    cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd || false,
+    cancelAtPeriodEnd: subscriptionData.cancelAtPeriodEnd ?? false,
     updatedAt: new Date().toISOString(),
     isDefault: false,
-  };
+  });
 
   const updatedClaims = {
     ...currentClaims,

@@ -28,7 +28,11 @@ import {
   detectBulkCollisions,
   DoNotDevError,
   hasRoleAccess,
-  DEFAULT_STATUS_VALUE,
+  createStatus,
+  prepareCreate,
+  prepareUpdate,
+  statusCan,
+  updateCheck,
 } from '@donotdev/core/server';
 import type {
   BulkRequest,
@@ -36,6 +40,8 @@ import type {
   EntityAccessConfig,
   UserRole,
 } from '@donotdev/core/server';
+
+import { writtenOf } from './written.js';
 
 // =============================================================================
 // Public types
@@ -52,11 +58,13 @@ export type BulkRowSchema = v.BaseSchema<unknown, any, v.BaseIssue<unknown>>;
 /**
  * A prepared insert row passed to the caller-supplied `transact` callback.
  * When {@link ExecuteBulkParams.mintInsertId} is provided, `id` is the minted
- * value; otherwise it carries whatever id (if any) the client supplied and
- * the storage layer is expected to mint its own.
+ * value (a client id never addresses a stored document). Otherwise it is the
+ * id the client supplied (a pre-minted id other rows reference, BULK_ACROSS.md
+ * "Pre-Minted IDs"), also kept on `row.id`, or the empty string when the
+ * storage layer mints its own.
  */
 export interface PreparedInsert {
-  /** Minted insert id, or the empty string when the target mints its own. */
+  /** Minted id, else the client-supplied id, else the empty string (the target mints its own). */
   id: string;
   /** Fully stamped row ready for storage. */
   row: Record<string, unknown>;
@@ -94,10 +102,28 @@ export interface ExecuteBulkParams<TRow = unknown> {
   ops: BulkRequest;
   /** Valibot schema validating each insert row. */
   createSchema: BulkRowSchema;
-  /** Valibot schema validating each insert row when status === 'draft'. */
+  /**
+   * `createSchemas(entity).draft`: drafts saved incomplete (CRUD rule 5). Required as soon
+   * as a draft row is sent: a draft without it is rejected (`invalid-argument`), never
+   * validated as a create.
+   */
   draftCreateSchema?: BulkRowSchema;
-  /** Valibot schema validating each update patch. */
+  /** `createSchemas(entity).update`: update patches (CRUD rules 2, 5). */
   updateSchema: BulkRowSchema;
+  /**
+   * Reads the stored rows of the updated ids (application field names, keyed by id).
+   * Called once, before validation, when the bulk carries updates: the stored row
+   * gives each patch its status and a published draft its whole record
+   * (`prepareUpdate`, as on the client). An updated id missing
+   * from the result is rejected (`not-found`). Required as soon as the bulk carries
+   * updates: an update without it is rejected (`internal`, a configuration error),
+   * never validated by its patch status alone. Every target passes it: Firestore,
+   * Supabase and Vercel read their store; the GraphQL / REST-CRUD server aids
+   * forward the consumer's `readStored` option.
+   */
+  readStored?: (
+    ids: readonly string[]
+  ) => Promise<ReadonlyMap<string, Record<string, unknown>>>;
   /** Per-bucket required roles. Missing entries are treated as "no bucket allowed". */
   access: EntityAccessConfig;
   /** Authenticated caller id (for metadata + audit). */
@@ -185,12 +211,17 @@ const EMPTY_BULK_RESPONSE: BulkResponse = Object.freeze({
  * 4. Per-bucket ACL — for each populated bucket, asserts the caller's role
  *    clears the corresponding `access.{create|update|delete}`. A missing
  *    role on a populated bucket is a configuration error and is rejected.
- * 5. Per-row validation — inserts against `createSchema`, updates against
- *    `updateSchema`. The first failure throws a `DoNotDevError` prefixed
- *    with `inserts[i]` or `updates[i]` so callers can pinpoint the row.
+ * 5. Per-row validation — the CRUD rules (`prepareCreate` / `prepareUpdate`,
+ *    core/schemas crud/), the stored rows read once with `readStored` (updates
+ *    without it → `internal`; an updated id with no stored row → `not-found`).
+ *    The first failure throws `validation-failed` (wire: `invalid-argument`)
+ *    naming `inserts[i]` / `updates[i]`. Unknown fields are logged, not written.
+ *    What is stored is the rules' `written`, never the raw row.
  * 6. Id minting — if `mintInsertId` is supplied, every insert gets a fresh
- *    id stamped onto its {@link PreparedInsert}. Otherwise `id` is `""` and
- *    the storage layer mints its own.
+ *    id stamped onto its {@link PreparedInsert}. Otherwise a client-supplied
+ *    `id` is kept (on the row and as `PreparedInsert.id`; the create schema
+ *    excludes it, it is restored after validation), else `id` is `""` and the
+ *    storage layer mints its own.
  * 7. Metadata stamping — `stampInsertMetadata` / `stampUpdateMetadata` run
  *    per row / per patch if provided.
  * 8. `transact(prepared)` runs exactly once. Must be atomic. Throws
@@ -212,8 +243,12 @@ const EMPTY_BULK_RESPONSE: BulkResponse = Object.freeze({
  * @throws {DoNotDevError} `invalid-argument` on wire-schema failure, per-row
  *   validation failure, or collision (wrapped for callers that only rethrow
  *   `DoNotDevError`).
+ * @throws {DoNotDevError} `not-found` when an updated id has no stored row
+ *   (`readStored`).
  * @throws {DoNotDevError} `permission-denied` when the caller's role cannot
  *   satisfy a populated bucket's access requirement.
+ * @throws {DoNotDevError} `internal` when the bulk carries updates but no
+ *   `readStored` is configured.
  * @throws {DoNotDevError} `internal` when the `transact` return value fails
  *   {@link BulkResponseSchema}.
  *
@@ -230,6 +265,7 @@ const EMPTY_BULK_RESPONSE: BulkResponse = Object.freeze({
  *   access,
  *   uid,
  *   userRole,
+ *   readStored: async (ids) => new Map((await db.getRows(ids)).map((row) => [row.id, row])),
  *   mintInsertId: () => crypto.randomUUID(),
  *   stampInsertMetadata: (row, uid) => ({
  *     ...row,
@@ -269,6 +305,7 @@ export async function executeBulk<TRow = unknown>(
     uid,
     userRole,
     transact,
+    readStored,
     mintInsertId,
     stampInsertMetadata,
     stampUpdateMetadata,
@@ -359,52 +396,82 @@ export async function executeBulk<TRow = unknown>(
     }
   }
 
-  // 5. Per-row validation. First failure wins — prefixed with its bucket
-  //    index so callers can point at the offending row.
+  // 5. Per-row validation: the CRUD rules (core/schemas crud/: `prepareCreate`,
+  //    `prepareUpdate`), as on the client. First failure wins, named by its bucket
+  //    index. What is stored is the rules' `written`, never the raw row.
+  const noDraftSchema = (locator: string): never => {
+    throw new DoNotDevError(
+      `Validation failed on ${locator}: draft row sent to ${collection} but no draft schema is configured`,
+      'invalid-argument'
+    );
+  };
+  // Without a draft schema, no draft row passes the guards below: `create` only fills the slot.
+  const schemas = {
+    create: createSchema,
+    draft: draftCreateSchema ?? createSchema,
+    update: updateSchema,
+  };
+  const insertRows: { row: Record<string, unknown>; id: string | null }[] = [];
   for (let i = 0; i < inserts.length; i++) {
-    const row = inserts[i]!;
-    const rowObj = row as unknown as Record<string, unknown>;
-    const status =
-      (rowObj.status as string | undefined) ?? DEFAULT_STATUS_VALUE;
-    const isDraft = status === 'draft';
-    const schemaToUse =
-      isDraft && draftCreateSchema ? draftCreateSchema : createSchema;
-    // Only inject default `status` when validating against the draft schema.
-    // This avoids breaking createSchema-only tests/entities that don't define
-    // `status` in their schema shape (valibot's `v.object` is strict by
-    // default).
-    const payloadForValidation =
-      isDraft && draftCreateSchema ? { ...rowObj, status } : rowObj;
-    validateRow(payloadForValidation, schemaToUse, `inserts[${i}]`);
+    const rowObj = inserts[i]! as unknown as Record<string, unknown>;
+    if (!draftCreateSchema && statusCan(createStatus(rowObj), 'saveIncomplete')) noDraftSchema(`inserts[${i}]`);
+    const row = writtenOf(prepareCreate(schemas, rowObj), collection, `inserts[${i}]`);
+    // A client id is a pre-minted id other rows reference: the rules never write
+    // `id`, so it travels beside the row.
+    insertRows.push({ row, id: typeof rowObj.id === 'string' ? rowObj.id : null });
   }
+  // The stored rows give each patch its status and the publish check its record.
+  if (updates.length > 0 && !readStored) {
+    throw new DoNotDevError(
+      `Bulk update requested on ${collection} but no readStored is configured: the stored row decides each patch's rules`,
+      'internal'
+    );
+  }
+  const stored =
+    updates.length > 0 && readStored
+      ? await readStored(updates.map((u) => u.id))
+      : new Map<string, Record<string, unknown>>();
+  const updatePatches: Record<string, unknown>[] = [];
   for (let i = 0; i < updates.length; i++) {
-    validateRow(updates[i]!.patch, updateSchema, `updates[${i}]`);
+    const { id, patch } = updates[i]!;
+    const locator = `updates[${i}]`;
+    const storedRow = stored.get(id);
+    if (!storedRow) {
+      throw new DoNotDevError(
+        `Document not found on ${locator}: ${collection}/${id}`,
+        'not-found'
+      );
+    }
+    if (!draftCreateSchema && updateCheck(patch as Record<string, unknown>, storedRow).schemaKey === 'draft') {
+      noDraftSchema(locator);
+    }
+    updatePatches.push(
+      writtenOf(
+        prepareUpdate(schemas, { id, patch: patch as Record<string, unknown>, stored: storedRow }),
+        collection,
+        locator
+      )
+    );
   }
 
   // 6. Id minting (if provided). Minting at this layer means `transact`
   //    receives stable ids — crucial for Firestore's retry-able transaction
   //    callbacks where the callback body may run more than once.
-  const preparedInserts: PreparedInsert[] = inserts.map((row) => {
-    const rowRecord = row as unknown as Record<string, unknown>;
-    // Always ensure status is present for storage + downstream schema
-    // stamping. Validation may have used `draftCreateSchema` to relax
-    // required-field enforcement, but storage should still persist a
-    // concrete status value.
-    const status =
-      (rowRecord.status as string | undefined) ?? DEFAULT_STATUS_VALUE;
-    const id = mintInsertId ? mintInsertId() : '';
-    const stamped = stampInsertMetadata
-      ? stampInsertMetadata({ ...rowRecord, status }, uid)
-      : ({ ...rowRecord, status } as Record<string, unknown>);
+  //    Without minting, a client id is kept (row + PreparedInsert.id) for the
+  //    target to store; with minting, the minted id wins.
+  const preparedInserts: PreparedInsert[] = insertRows.map(({ row, id: clientId }) => {
+    const id = mintInsertId ? mintInsertId() : (clientId ?? '');
+    const withId = !mintInsertId && clientId !== null ? { ...row, id: clientId } : row;
+    const stamped = stampInsertMetadata ? stampInsertMetadata(withId, uid) : withId;
     return { id, row: stamped };
   });
 
   // 7. Update metadata stamping.
-  const preparedUpdates: PreparedUpdate[] = updates.map((u) => ({
+  const preparedUpdates: PreparedUpdate[] = updates.map((u, i) => ({
     id: u.id,
     patch: stampUpdateMetadata
-      ? stampUpdateMetadata(u.patch as Record<string, unknown>, uid)
-      : (u.patch as Record<string, unknown>),
+      ? stampUpdateMetadata(updatePatches[i]!, uid)
+      : updatePatches[i]!,
   }));
 
   // 8. Atomic dispatch. Propagates any `transact` error verbatim — the
@@ -444,41 +511,3 @@ export async function executeBulk<TRow = unknown>(
 // =============================================================================
 // Internal helpers
 // =============================================================================
-
-/**
- * Validate a row against a Valibot schema and rethrow a `DoNotDevError`
- * prefixed with the bucket position so callers can point at the offending
- * row. Keeps the hot path free of try/catch overhead when no schema is
- * supplied.
- *
- * @param value - Row or patch to validate.
- * @param schema - Valibot schema.
- * @param locator - Human-readable pointer such as `inserts[2]`.
- *
- * @example
- * ```typescript
- * validateRow(inserts[i], createSchema, `inserts[${i}]`);
- * ```
- *
- * @internal
- */
-function validateRow(
-  value: unknown,
-  schema: BulkRowSchema,
-  locator: string
-): void {
-  const parsed = v.safeParse(schema, value);
-  if (parsed.success) return;
-
-  const messages = parsed.issues
-    .map(
-      (issue) =>
-        `${issue.path?.map((p) => p.key).join('.') || 'root'}: ${issue.message}`
-    )
-    .join('; ');
-  throw new DoNotDevError(
-    `Validation failed on ${locator}: ${messages}`,
-    'invalid-argument',
-    { details: { validationErrors: parsed.issues } }
-  );
-}

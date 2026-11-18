@@ -20,7 +20,7 @@ import * as v from 'valibot';
 import {
   filterVisibleFields,
   hasRoleAccess,
-  HIDDEN_STATUSES,
+  hiddenStatusesFor,
 } from '@donotdev/core/server';
 import type {
   EntityOwnershipConfig,
@@ -91,9 +91,10 @@ function listEntitiesLogicFactory(
     const db = getFirebaseAdminFirestore();
     let query: Query = db.collection(collection);
 
-    // Filter out hidden statuses for non-admin users (security: drafts/deleted never reach public)
-    if (!isAdmin) {
-      query = query.where('status', 'not-in', [...HIDDEN_STATUSES]);
+    // CRUD rule 4 (core/schemas crud/read): hidden statuses never reach non-admins
+    const hidden = hiddenStatusesFor(userRole);
+    if (hidden.length > 0) {
+      query = query.where('status', 'not-in', [...hidden]);
     }
 
     // Ownership: when set and not admin, listCard = public condition, list = mine filter

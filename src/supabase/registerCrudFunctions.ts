@@ -90,6 +90,7 @@ export function createSupabaseCrudFunctions(
     handlers[`update_${col}`] = createSupabaseUpdateEntity(
       col,
       schemas.update,
+      schemas.draft,
       access.update
     );
 
