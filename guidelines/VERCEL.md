@@ -16,7 +16,7 @@ Vercel serves your built Vite or Next.js app on a global CDN. It can also run **
 - Vercel Functions handle API routes (`/api/*`)
 - Combine with Firebase/Supabase for auth + database
 
-The framework scaffolds `vercel.json` with CSP headers, rewrites, and caching rules.
+The framework scaffolds `vercel.json` with rewrites (and functions). HTTP response headers (CSP, security, caching) come from the core header policy: Vite apps get them written into `vercel.json` at dev/build start, Next apps serve them from next.config `headers()`. App deltas go in `appConfig.headers` (core guideline APP_CONFIG, section 4). Vite's CSP is `script-src 'self'` (no inline scripts); an app's inline script is allowed by hash in `appConfig.headers.csp`.
 
 ---
 
@@ -275,7 +275,7 @@ After deploying, configure Supabase so OAuth (Google, GitHub, etc.) redirects ba
 
 **"CORS error"**
 - Vercel handles CORS for same-origin requests automatically
-- For cross-origin: CSP headers in `vercel.json` are pre-configured for your backend
+- For cross-origin browser calls: the CSP `connect-src` allows your backend (from its provider package); add other origins in `appConfig.headers.csp`. API routes set their CORS headers in code (`vercel/api/utils/cors.ts`)
 
 **".env values not loading"**
 - Vercel only reads env vars from its Dashboard, not from `.env` files
