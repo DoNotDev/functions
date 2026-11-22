@@ -27,6 +27,9 @@ import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js'; // ✅ IMPORT SECRET
 
+/** Stripe options plus the secrets this function reads (bound at deploy). */
+const CUSTOMER_PORTAL_CONFIG = { ...STRIPE_CONFIG, secrets: [stripeSecretKey] };
+
 const customerPortalSchema = v.object({
   userId: v.string(),
   returnUrl: v.optional(v.pipe(v.string(), v.url())),
@@ -92,12 +95,16 @@ async function createCustomerPortalLogic(
   };
 }
 
+/**
+ * Create the Stripe Customer Portal callable.
+ * Declares the `STRIPE_SECRET_KEY` secret, so the deploy binds it to this function.
+ */
 export function createCustomerPortal(): CallableFunction<
   CustomerPortalRequest,
   Promise<{ url: string }>
 > {
   return createBaseFunction<CustomerPortalRequest, { url: string }>(
-    STRIPE_CONFIG,
+    CUSTOMER_PORTAL_CONFIG,
     customerPortalSchema,
     'create_customer_portal',
     createCustomerPortalLogic

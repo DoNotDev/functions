@@ -1,6 +1,6 @@
 {
   "name": "@donotdev/functions",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": false,
   "description": "Backend functions for DoNotDev Framework - Firebase, Vercel, and platform-agnostic implementations for auth, billing, CRUD, and OAuth",
   "main": "./lib/firebase/index.js",
@@ -62,8 +62,8 @@
     "@ai-sdk/openai": "^4.0.115",
     "@sentry/node": "^10.78.0",
     "@supabase/supabase-js": "^2.119.0",
-    "@upstash/ratelimit": "^2.0.8",
-    "@upstash/redis": "^1.37.0",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.41.0",
     "ai": "^7.0.170",
     "firebase-admin": "^14.5.1",
     "firebase-functions": "^7.4.0",

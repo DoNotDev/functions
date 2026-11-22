@@ -31,6 +31,9 @@ import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';
 
+/** Stripe options plus the secrets this function reads (bound at deploy). */
+const CHECKOUT_CONFIG = { ...STRIPE_CONFIG, secrets: [stripeSecretKey] };
+
 /**
  * Business logic for creating Stripe checkout session.
  * Uses shared algorithm - same as Supabase and Vercel handlers.
@@ -91,7 +94,8 @@ async function createCheckoutSessionLogic(
 }
 
 /**
- * Create Firebase function for checkout session creation
+ * Create Firebase function for checkout session creation.
+ * Declares the `STRIPE_SECRET_KEY` secret, so the deploy binds it to this function.
  */
 export function createCheckoutSession(
   billingConfig: StripeBackConfig
@@ -103,7 +107,7 @@ export function createCheckoutSession(
     CreateCheckoutSessionRequest,
     { sessionId: string; sessionUrl: string | null }
   >(
-    STRIPE_CONFIG,
+    CHECKOUT_CONFIG,
     CreateCheckoutSessionRequestSchema,
     'create_checkout_session',
     (data, context) => createCheckoutSessionLogic(data, context, billingConfig)

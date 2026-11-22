@@ -48,6 +48,30 @@ describe('vercel entry without firebase', () => {
     expect(typeof entry.refreshSubscriptionStatus).toBe('function');
   });
 
+  // Route handlers are default exports of their modules; the barrels name them
+  // (scaffolded functions/src/api/** files import these names)
+  it('exports every route handler by name', async () => {
+    const entry = await import('../api/index.js');
+    for (const name of [
+      'getCustomClaims',
+      'getUserAuthStatus',
+      'removeCustomClaims',
+      'createSetCustomClaimsHandler',
+      'bulk',
+      'createEntity',
+      'deleteEntity',
+      'getEntity',
+      'listEntities',
+      'updateEntity',
+      'checkGitHubAccess',
+      'exchangeToken',
+      'grantGitHubAccess',
+      'revokeGitHubAccess',
+    ] as const) {
+      expect(typeof entry[name], name).toBe('function');
+    }
+  });
+
   it('builds Supabase billing handlers and resolves the supabase backend', async () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SECRET_KEY = 'sb_secret_test';

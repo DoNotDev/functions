@@ -14,12 +14,24 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { isFirestoreConfigured } from '../../shared/utils/detectFirestore.js';
 import { stripe } from '../../shared/billing/stripeClient.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
+import { stripeSecretKey, stripeWebhookSecret } from '../config/secrets.js';
+
+/**
+ * Stripe options plus the secrets the check reads (bound at deploy): it reads
+ * them from `process.env`, which Cloud Run sets only for declared secrets.
+ */
+const HEALTH_CONFIG = {
+  ...STRIPE_CONFIG,
+  secrets: [stripeSecretKey, stripeWebhookSecret],
+};
 
 /**
  * Comprehensive health check for billing system
  * GET /billingHealth
+ * Declares the `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` secrets, so the
+ * deploy binds them to this function.
  */
-export const billingHealth = onRequest(STRIPE_CONFIG, async (req, res) => {
+export const billingHealth = onRequest(HEALTH_CONFIG, async (req, res) => {
   let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
 
   // Check Stripe connection

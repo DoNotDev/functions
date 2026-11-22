@@ -24,6 +24,9 @@ import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';
 import { isOneOf, pinnedSubscriptionPeriod } from '../../shared/billing/stripePinned.js';
 
+/** Stripe options plus the secrets this function reads (bound at deploy). */
+const CHANGE_PLAN_CONFIG = { ...STRIPE_CONFIG, secrets: [stripeSecretKey] };
+
 const changePlanSchema = v.object({
   userId: v.string(),
   newPriceId: v.string(),
@@ -134,7 +137,8 @@ async function changePlanLogic(
 }
 
 /**
- * Change subscription plan function
+ * Change subscription plan function.
+ * Declares the `STRIPE_SECRET_KEY` secret, so the deploy binds it to this function.
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -144,7 +148,7 @@ export function changePlan(billingConfig: StripeBackConfig) {
   return createBaseFunction<
     v.InferOutput<typeof changePlanSchema>,
     { success: boolean; newTier: string; newPrice: number }
-  >(STRIPE_CONFIG, changePlanSchema, 'change_plan', (data, context) =>
+  >(CHANGE_PLAN_CONFIG, changePlanSchema, 'change_plan', (data, context) =>
     changePlanLogic(data, context, billingConfig)
   );
 }

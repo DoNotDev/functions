@@ -9,7 +9,8 @@
  * @author AMBROISE PARK Consulting
  */
 
-export * from './check-github-access.js';
-export * from './exchange-token.js';
-export * from './grant-github-access.js';
-export * from './revoke-github-access.js';
+// Route handlers and factories are default exports: `export *` would drop them
+export { default as checkGitHubAccess } from './check-github-access.js';
+export { default as exchangeToken } from './exchange-token.js';
+export { default as grantGitHubAccess } from './grant-github-access.js';
+export { default as revokeGitHubAccess } from './revoke-github-access.js';

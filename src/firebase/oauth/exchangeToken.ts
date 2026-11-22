@@ -2,14 +2,16 @@
 
 /**
  * @fileoverview OAuth token exchange Firebase function
- * @description Firebase callable function for exchanging OAuth codes for tokens
+ * @description Factory for the Firebase callable that exchanges OAuth codes for
+ * tokens, for the providers the app enables.
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import type { CallableFunction } from 'firebase-functions/v2/https';
 
 import {
   OAUTH_PARTNERS,
@@ -22,20 +24,56 @@ import {
 } from '@donotdev/firebase/server';
 
 import { assertAuthenticated } from '../../shared/utils/internal/auth.js';
+import { defineOAuthProviderSecrets } from './providerSecrets.js';
 
 /**
- * Exchange OAuth authorization code for access token
+ * Create the callable that exchanges an OAuth authorization code for tokens.
  *
- * @version 0.1.0
+ * Serves only `providers`: it declares `${PROVIDER}_CLIENT_SECRET` for each one
+ * (bound at deploy) and rejects a request for any other provider with
+ * `invalid-argument`. `${PROVIDER}_CLIENT_ID` stays plain config in functions/.env.
+ *
+ * @param providers - OAuth partner ids from `OAUTH_PARTNERS` (at least one)
+ * @returns The `exchangeToken` callable
+ * @throws Error when `providers` is empty or lists an unknown provider
+ *
+ * @example
+ * ```typescript
+ * // functions/src/index.ts
+ * import { createExchangeToken } from '@donotdev/functions/firebase';
+ *
+ * export const exchangeToken = createExchangeToken(['github', 'google']);
+ * ```
+ *
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-export const exchangeToken = onCall<ExchangeTokenRequest>(async (request) => {
+export function createExchangeToken(
+  providers: readonly OAuthPartnerId[]
+): CallableFunction<ExchangeTokenRequest, Promise<unknown>> {
+  const { allowed, secrets } = defineOAuthProviderSecrets(
+    providers,
+    'createExchangeToken'
+  );
+  return onCall<ExchangeTokenRequest>({ secrets }, (request) =>
+    exchangeTokenHandler(request.auth?.uid, request.data, allowed)
+  );
+}
+
+/**
+ * Exchange OAuth authorization code for access token (enabled providers only).
+ */
+async function exchangeTokenHandler(
+  authUid: string | undefined,
+  data: ExchangeTokenRequest,
+  allowed: ReadonlySet<string>
+): Promise<unknown> {
   // Verify authentication
-  const uid = assertAuthenticated(request.auth?.uid);
+  const uid = assertAuthenticated(authUid);
 
   const { provider, purpose, code, redirectUri, codeVerifier, idempotencyKey } =
-    request.data;
+    data;
 
   // W17: Validate idempotency key length and content.
   if (idempotencyKey !== undefined) {
@@ -60,6 +98,13 @@ export const exchangeToken = onCall<ExchangeTokenRequest>(async (request) => {
   // Validate required parameters BEFORE reserving idempotency key
   if (!provider || !purpose || !code || !redirectUri) {
     throw new HttpsError('invalid-argument', 'Missing required parameters');
+  }
+
+  if (!allowed.has(provider)) {
+    throw new HttpsError(
+      'invalid-argument',
+      `Provider ${provider} is not enabled`
+    );
   }
 
   // C9: Atomic idempotency check using Firestore transaction to prevent TOCTOU race.
@@ -203,7 +248,7 @@ export const exchangeToken = onCall<ExchangeTokenRequest>(async (request) => {
         : 'Failed to exchange code for token'
     );
   }
-});
+}
 
 /**
  * Fetch user profile from OAuth provider

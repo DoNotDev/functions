@@ -19,7 +19,18 @@ import { getFirebaseAdminAuth } from '@donotdev/firebase/server';
 import { stripe, validateStripeEnvironment } from '../../shared/billing/stripeClient.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
+import { stripeSecretKey } from '../config/secrets.js';
 import { pinnedSubscriptionPeriod } from '../../shared/billing/stripePinned.js';
+
+/**
+ * Stripe options plus the secrets this function reads (bound at deploy):
+ * `stripe` and `validateStripeEnvironment` read `process.env.STRIPE_SECRET_KEY`,
+ * which Cloud Run sets only for a declared secret.
+ */
+const REFRESH_SUBSCRIPTION_CONFIG = {
+  ...STRIPE_CONFIG,
+  secrets: [stripeSecretKey],
+};
 
 /**
  * Schema for refreshing subscription status
@@ -95,7 +106,8 @@ async function refreshSubscriptionStatusLogic(
 
 /**
  * Refreshes user's subscription status from Stripe
- * Base function handles all common concerns automatically
+ * Base function handles all common concerns automatically.
+ * Declares the `STRIPE_SECRET_KEY` secret, so the deploy binds it to this function.
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -107,7 +119,7 @@ export const refreshSubscriptionStatus = (
 ) => {
   const schema = customSchema || refreshSubscriptionStatusSchema;
   return createBaseFunction(
-    STRIPE_CONFIG,
+    REFRESH_SUBSCRIPTION_CONFIG,
     schema,
     'refresh_subscription_status',
     refreshSubscriptionStatusLogic

@@ -20,6 +20,12 @@ import { createBaseFunction } from '../baseFunction.js';
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey } from '../config/secrets.js';
 
+/** Stripe options plus the secrets this function reads (bound at deploy). */
+const CANCEL_SUBSCRIPTION_CONFIG = {
+  ...STRIPE_CONFIG,
+  secrets: [stripeSecretKey],
+};
+
 const cancelSubscriptionSchema = v.object({
   userId: v.string(),
 });
@@ -57,7 +63,8 @@ async function cancelSubscriptionLogic(
 }
 
 /**
- * Cancel subscription function
+ * Cancel subscription function.
+ * Declares the `STRIPE_SECRET_KEY` secret, so the deploy binds it to this function.
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -65,7 +72,7 @@ async function cancelSubscriptionLogic(
  */
 export function cancelSubscription() {
   return createBaseFunction(
-    STRIPE_CONFIG,
+    CANCEL_SUBSCRIPTION_CONFIG,
     cancelSubscriptionSchema,
     'cancel_subscription',
     cancelSubscriptionLogic

@@ -4,6 +4,9 @@
 
 ### Patch Changes
 
+- `@donotdev/functions/vercel` exports its route handlers by name: `getCustomClaims`, `getUserAuthStatus`, `removeCustomClaims`, `bulk`, `createEntity`, `getEntity`, `listEntities`, `updateEntity`, `deleteEntity`, `checkGitHubAccess`, `exchangeToken`, `grantGitHubAccess`, `revokeGitHubAccess` (default exports of their modules, dropped by the barrels' `export *`). Scaffolded Vercel functions import these names and did not build.
+- **Breaking:** `exchangeToken` and `refreshToken` (Firebase) are now factories, `createExchangeToken(providers)` and `createRefreshToken(providers)`: `export const exchangeToken = createExchangeToken(['github'])`. Each declares `{PROVIDER}_CLIENT_SECRET` for exactly the listed providers (bound at deploy) and rejects a request for any other provider with `invalid-argument`; an empty list or an id not in `OAUTH_PARTNERS` throws at load. `{PROVIDER}_CLIENT_ID` stays plain config in `functions/.env`.
+- Firebase billing functions declare the Stripe secrets they read, so the deploy binds them: `createCheckoutSession`, `createCustomerPortal`, `cancelSubscription`, `changePlan`, `refreshSubscriptionStatus` (`STRIPE_SECRET_KEY`), `createStripeWebhook` and `billingHealth` (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`).
 - **Breaking:** removed 0.1.x dynamic pricing (`unitAmount` + `productName`, `maxUnitAmount`, `beforeCheckout` `overrides`). Use a `priceId` or StripeOrder.
 - **Breaking:** removed deprecated APIs: `registerCrudFunctions`, `createIdempotencyStore`, `resetIdempotencyStore`, `LegacyIdempotencyStore`, `checkAndReserve`, `isProcessed`, and the `shared/utils` auth and subscription wrappers.
 - **Breaking:** `processWebhook` requires its `idempotencyStore` argument (`createFirestoreIdempotencyStore()` or `createSupabaseIdempotencyStore(...)`). The 7-argument 0.1.x call no longer falls back to Firestore auto-detection. `createIdempotencyStore` stays exported, deprecated.

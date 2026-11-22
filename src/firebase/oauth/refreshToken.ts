@@ -2,17 +2,20 @@
 
 /**
  * @fileoverview OAuth token refresh Firebase function
- * @description Firebase callable function for refreshing OAuth tokens
+ * @description Factory for the Firebase callable that refreshes OAuth tokens,
+ * for the providers the app enables.
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import type { CallableFunction } from 'firebase-functions/v2/https';
 
 import {
   OAUTH_PARTNERS,
+  type OAuthPartnerId,
   type OAuthRefreshRequest,
 } from '@donotdev/core/server';
 import {
@@ -21,23 +24,65 @@ import {
 } from '@donotdev/firebase/server';
 
 import { assertAuthenticated } from '../../shared/utils/internal/auth.js';
+import { defineOAuthProviderSecrets } from './providerSecrets.js';
 
 /**
- * Refresh an OAuth token
+ * Create the callable that refreshes an OAuth token.
  *
- * @version 0.1.0
+ * Serves only `providers`: it declares `${PROVIDER}_CLIENT_SECRET` for each one
+ * (bound at deploy) and rejects a request for any other provider with
+ * `invalid-argument`. `${PROVIDER}_CLIENT_ID` stays plain config in functions/.env.
+ *
+ * @param providers - OAuth partner ids from `OAUTH_PARTNERS` (at least one)
+ * @returns The `refreshToken` callable
+ * @throws Error when `providers` is empty or lists an unknown provider
+ *
+ * @example
+ * ```typescript
+ * // functions/src/index.ts
+ * import { createRefreshToken } from '@donotdev/functions/firebase';
+ *
+ * export const refreshToken = createRefreshToken(['github', 'google']);
+ * ```
+ *
+ * @version 0.2.0
  * @since 0.0.1
  * @author AMBROISE PARK Consulting
  */
-export const refreshToken = onCall<OAuthRefreshRequest>(async (request) => {
-  // Verify authentication
-  const uid = assertAuthenticated(request.auth?.uid);
+export function createRefreshToken(
+  providers: readonly OAuthPartnerId[]
+): CallableFunction<
+  OAuthRefreshRequest,
+  ReturnType<typeof refreshTokenHandler>
+> {
+  const { allowed, secrets } = defineOAuthProviderSecrets(
+    providers,
+    'createRefreshToken'
+  );
+  return onCall<OAuthRefreshRequest>({ secrets }, (request) =>
+    refreshTokenHandler(request.auth?.uid, request.data, allowed)
+  );
+}
 
-  const {
-    provider,
-    refreshToken: refreshTokenValue,
-    redirectUri,
-  } = request.data;
+/**
+ * Refresh an OAuth token (enabled providers only).
+ */
+async function refreshTokenHandler(
+  authUid: string | undefined,
+  data: OAuthRefreshRequest,
+  allowed: ReadonlySet<string>
+) {
+  // Verify authentication
+  const uid = assertAuthenticated(authUid);
+
+  const { provider, refreshToken: refreshTokenValue, redirectUri } = data;
+
+  if (!allowed.has(provider)) {
+    throw new HttpsError(
+      'invalid-argument',
+      `Provider ${provider} is not enabled`
+    );
+  }
 
   try {
     // Get provider endpoints
@@ -146,4 +191,4 @@ export const refreshToken = onCall<OAuthRefreshRequest>(async (request) => {
       error instanceof Error ? error.message : 'Failed to refresh token'
     );
   }
-});
+}

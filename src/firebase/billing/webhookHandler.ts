@@ -28,6 +28,12 @@ import {
 import { STRIPE_CONFIG } from '../config/constants.js';
 import { stripeSecretKey, stripeWebhookSecret } from '../config/secrets.js'; // ✅ IMPORT SECRETS
 
+/** Stripe options plus the secrets the webhook reads (bound at deploy). */
+const WEBHOOK_CONFIG = {
+  ...STRIPE_CONFIG,
+  secrets: [stripeSecretKey, stripeWebhookSecret],
+};
+
 /**
  * Read raw body from request stream
  */
@@ -51,6 +57,8 @@ async function getRawBody(req: Request): Promise<Buffer> {
  * Create the Firebase Stripe webhook (HTTPS function) from the app's back config.
  * Events are stored in Firestore `webhook_idempotency`; any failure answers
  * non-2xx so Stripe retries the event.
+ * Declares the `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` secrets, so the
+ * deploy binds them to this function.
  *
  * @example
  * ```typescript
@@ -68,7 +76,7 @@ async function getRawBody(req: Request): Promise<Buffer> {
 export function createStripeWebhook(
   billingConfig: StripeBackConfig
 ): HttpsFunction {
-  return onRequest(STRIPE_CONFIG, async (req, res) => {
+  return onRequest(WEBHOOK_CONFIG, async (req, res) => {
     // ✅ LATEST BEST PRACTICE: Init with secret value
     initStripe(stripeSecretKey.value());
 

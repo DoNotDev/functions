@@ -9,7 +9,8 @@
  * @author AMBROISE PARK Consulting
  */
 
-export * from './get-custom-claims.js';
-export * from './get-user-auth-status.js';
-export * from './remove-custom-claims.js';
+// Route handlers are default exports: `export *` would drop them
+export { default as getCustomClaims } from './get-custom-claims.js';
+export { default as getUserAuthStatus } from './get-user-auth-status.js';
+export { default as removeCustomClaims } from './remove-custom-claims.js';
 export * from './set-custom-claims.js';

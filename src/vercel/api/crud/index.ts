@@ -9,9 +9,10 @@
  * @author AMBROISE PARK Consulting
  */
 
-export * from './bulk.js';
-export * from './create.js';
-export * from './delete.js';
-export * from './get.js';
-export * from './list.js';
-export * from './update.js';
+// Route handlers are default exports: `export *` would drop them
+export { default as bulk } from './bulk.js';
+export { default as createEntity } from './create.js';
+export { default as deleteEntity } from './delete.js';
+export { default as getEntity } from './get.js';
+export { default as listEntities } from './list.js';
+export { default as updateEntity } from './update.js';

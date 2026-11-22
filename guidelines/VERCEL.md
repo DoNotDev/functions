@@ -16,7 +16,7 @@ Vercel serves your built Vite or Next.js app on a global CDN. It can also run **
 - Vercel Functions handle API routes (`/api/*`)
 - Combine with Firebase/Supabase for auth + database
 
-The framework scaffolds `vercel.json` with rewrites (and functions). HTTP response headers (CSP, security, caching) come from the core header policy: Vite apps get them written into `vercel.json` at dev/build start, Next apps serve them from next.config `headers()`. App deltas go in `appConfig.headers` (core guideline APP_CONFIG, section 4). Vite's CSP is `script-src 'self'` (no inline scripts); an app's inline script is allowed by hash in `appConfig.headers.csp`.
+The framework scaffolds `vercel.json` with rewrites; Vercel functions are scaffolded in `functions/src/api/` (see Vercel Functions below). HTTP response headers (CSP, security, caching) come from the core header policy: Vite apps get them written into `vercel.json` at dev/build start, Next apps serve them from next.config `headers()`. App deltas go in `appConfig.headers` (core guideline APP_CONFIG, section 4). Vite's CSP is `script-src 'self'` (no inline scripts); an app's inline script is allowed by hash in `appConfig.headers.csp`.
 
 ---
 
@@ -110,12 +110,18 @@ git push origin main
 
 ## Vercel Functions (Optional)
 
-The framework provides helpers for Vercel Functions via `@donotdev/functions/vercel`. Place your API routes in `pages/api/` (Next.js) or `api/` (Vite).
+The framework provides helpers for Vercel Functions via `@donotdev/functions/vercel`. Scaffolded apps (`--functions vercel`) put them in the `functions/` package: one file per function in `functions/src/api/<path>.ts`, default-exporting a `(req, res)` handler, served at `/api/<path>` (`src/api/auth/getCustomClaims.ts` → `/api/auth/getCustomClaims`). Files named `_*` are shared code, not functions.
+
+**Build:** `dndev build <app>:func` runs `functions/build.mjs`, which calls `buildVercelFunctions()` from `@donotdev/core/functions`: each file is bundled (dependencies inlined) into the [Build Output API](https://vercel.com/docs/build-output-api/primitives#functions) function `functions/.vercel/output/functions/api/<path>.func` (`index.mjs` + `.vc-config.json`, Node.js 22, Vercel's `req`/`res` helpers on).
+
+**Deploy:** `dndev deploy` uploads a prebuilt Build Output, so Vercel builds nothing: the root `api/` convention and the vercel.json `functions` key do not apply.
+- Vercel-hosted frontend: frontend and functions are **one deployment** (`--scope both`); `--scope frontend` or `functions` alone is refused, since a deployment replaces the whole site. Next.js: the functions join the local `vercel build` output; `--from-git` cannot carry them and fails.
+- Frontend elsewhere (or none): `--scope functions` deploys them alone to the app's Vercel project (`VERCEL_PROJECT_ID` in the app `.env`).
 
 ### Custom Functions
 
 ```typescript
-// pages/api/product-details.ts
+// functions/src/api/product-details.ts
 import * as v from 'valibot';
 import { createVercelBaseFunction } from '@donotdev/functions/vercel';
 
@@ -137,31 +143,34 @@ Auth, rate limiting, schema validation, and metrics - all included by default.
 
 ### Pre-built Endpoints
 
-The framework ships ready-made API handlers:
+The framework ships ready-made API handlers, exported by name:
 
 ```typescript
-// pages/api/auth/claims.ts
-import { setCustomClaims } from '@donotdev/functions/vercel';
-export default setCustomClaims;
+// functions/src/api/auth/getCustomClaims.ts
+export { getCustomClaims as default } from '@donotdev/functions/vercel';
 
-// pages/api/billing/checkout.ts
+// functions/src/api/auth/setCustomClaims.ts: only the listed keys are self-assignable
+import { createSetCustomClaimsHandler } from '@donotdev/functions/vercel';
+export default createSetCustomClaimsHandler({ allowedClaimKeys: ['theme'] });
+
+// functions/src/api/billing/checkout.ts
 import { createCheckoutSession } from '@donotdev/functions/vercel';
-import { billingConfig } from '../../../config/billing';
-export default createCheckoutSession(billingConfig);
+import { billingConfig } from '../../config/billing';
+export default createCheckoutSession(billingConfig, { backend: 'firebase' });
 ```
 
-Available: auth (claims, status, delete account), billing (checkout, cancel, portal, change plan), OAuth (token exchange, access grants).
+Available: auth (`getCustomClaims`, `getUserAuthStatus`, `removeCustomClaims`, `createSetCustomClaimsHandler`), CRUD (`createEntity`, `getEntity`, `listEntities`, `updateEntity`, `deleteEntity`, `bulk`), billing (`createCheckoutSession`, `createStripeWebhook`, `refreshSubscriptionStatus()`, `cancelSubscription`, `changePlan`, `createCustomerPortal`), OAuth (`exchangeToken()`, `checkGitHubAccess()`, `grantGitHubAccess()`, `revokeGitHubAccess`). Names written with `()` are factories (optional Valibot request schema).
 
 ### Bulk CRUD (`POST /api/crud/:collection/bulk`)
 
 Transactional bulk endpoint for the `@donotdev/restcrud` adapter. One HTTP round-trip, one Firestore transaction, atomic across `inserts` / `updates` / `deletes`.
 
 ```ts
-// pages/api/crud/[collection]/bulk.ts
-export { default } from '@donotdev/functions/vercel';
-// or, if you only want the bulk handler:
-// export { bulk as default } from '@donotdev/functions/vercel';
+// pages/api/crud/[collection]/bulk.ts (Next.js Pages Router: the collection is the dynamic segment)
+export { bulk as default } from '@donotdev/functions/vercel';
 ```
+
+`functions/src/api/` has no dynamic segments (`[param]` file names fail the build): mount `bulk` in a Next.js app's `pages/api`, as above.
 
 Wire contract (shared with the adapter):
 
