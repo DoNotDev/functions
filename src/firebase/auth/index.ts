@@ -11,5 +11,6 @@
 
 export * from './getCustomClaims.js';
 export * from './getUserAuthStatus.js';
+export * from './listAuthUsers.js';
 export * from './removeCustomClaims.js';
 export * from './setCustomClaims.js';

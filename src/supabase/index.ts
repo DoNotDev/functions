@@ -29,6 +29,7 @@ export type { SetCustomClaimsOptions } from './auth/setCustomClaims.js';
 export { createGetCustomClaims } from './auth/getCustomClaims.js';
 export { createRemoveCustomClaims } from './auth/removeCustomClaims.js';
 export { createGetUserAuthStatus } from './auth/getUserAuthStatus.js';
+export { createListAuthUsers } from './auth/listAuthUsers.js';
 
 // Billing
 export { createCheckoutSession } from './billing/createCheckoutSession.js';

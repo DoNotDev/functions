@@ -19,11 +19,67 @@ import * as v from 'valibot';
 import type { UserRole } from '@donotdev/core/server';
 import { getFirebaseAdminFirestore } from '@donotdev/firebase/server';
 
-import { DoNotDevError, findReferences } from '../../shared/utils.js';
+import { DoNotDevError } from '../../shared/utils.js';
 import { createBaseFunction } from '../baseFunction.js';
 import { CRUD_CONFIG } from '../config/constants.js';
 
 export type DeleteEntityRequest = { id: string };
+
+/**
+ * Finds Firestore documents that reference a document.
+ *
+ * Firebase-only: lives here, not in `shared/utils.ts`, which Supabase Edge
+ * Functions import (the edge bundler resolves every import of that module).
+ *
+ * @param collection - Collection of the document to delete
+ * @param docId - Id of the document to delete
+ * @param referenceMetadata - Incoming references to check (none: no check)
+ * @returns One entry per referencing collection field
+ *
+ * @version 0.2.0
+ * @since 0.0.1
+ * @author AMBROISE PARK Consulting
+ */
+async function findReferences(
+  collection: string,
+  docId: string,
+  referenceMetadata?: {
+    incoming?: Array<{
+      sourceCollection: string;
+      sourceField: string;
+    }>;
+  }
+): Promise<Array<{ collection: string; field: string; count: number }>> {
+  const references: Array<{
+    collection: string;
+    field: string;
+    count: number;
+  }> = [];
+
+  if (!referenceMetadata?.incoming?.length) {
+    return references;
+  }
+
+  const db = getFirebaseAdminFirestore();
+
+  for (const ref of referenceMetadata.incoming) {
+    const snapshot = await db
+      .collection(ref.sourceCollection)
+      .where(ref.sourceField, '==', docId)
+      .limit(1)
+      .get();
+
+    if (!snapshot.empty) {
+      references.push({
+        collection: ref.sourceCollection,
+        field: ref.sourceField,
+        count: snapshot.size,
+      });
+    }
+  }
+
+  return references;
+}
 
 /**
  * Generic business logic for deleting entities

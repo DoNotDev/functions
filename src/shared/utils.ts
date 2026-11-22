@@ -1,8 +1,11 @@
 // packages/functions/src/shared/utils.ts
 
 /**
- * @fileoverview Shared utilities for Firebase and Vercel functions
- * @description Common utilities that can be used by both Firebase and Vercel function implementations
+ * @fileoverview Shared utilities for Firebase, Vercel and Supabase functions
+ * @description Common utilities for every function implementation. Provider-neutral:
+ * Supabase Edge Functions import this module, and the edge bundler resolves every
+ * import in it (even a lazy `import()` that is never called). Firebase-only code
+ * lives under `firebase/`.
  *
  * @version 0.1.0
  * @since 0.0.1
@@ -132,77 +135,4 @@ export function validateCollectionName(name: string): void {
       'Invalid collection name: must not contain "/", "..", or start with "_"'
     );
   }
-}
-
-/**
- * Verifies Firebase auth token
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function verifyFirebaseAuthToken(token: string): Promise<string> {
-  if (!token) {
-    throw new DoNotDevError('Missing authentication token', 'unauthenticated');
-  }
-
-  // Lazy: the Vercel/Supabase entries must load without firebase-admin
-  const { getFirebaseAdminAuth } = await import('@donotdev/firebase/server');
-  try {
-    const decodedToken = await getFirebaseAdminAuth().verifyIdToken(token);
-    return decodedToken.uid;
-  } catch (error) {
-    throw new DoNotDevError('Invalid or expired token', 'unauthenticated');
-  }
-}
-
-/**
- * Finds references to a document
- *
- * @version 0.1.0
- * @since 0.0.1
- * @author AMBROISE PARK Consulting
- */
-export async function findReferences(
-  collection: string,
-  docId: string,
-  referenceMetadata?: {
-    incoming?: Array<{
-      sourceCollection: string;
-      sourceField: string;
-    }>;
-  }
-): Promise<Array<{ collection: string; field: string; count: number }>> {
-  const references: Array<{
-    collection: string;
-    field: string;
-    count: number;
-  }> = [];
-
-  if (!referenceMetadata?.incoming?.length) {
-    return references;
-  }
-
-  // Lazy: the Vercel/Supabase entries must load without firebase-admin
-  const { getFirebaseAdminFirestore } =
-    await import('@donotdev/firebase/server');
-  const db = getFirebaseAdminFirestore();
-
-  for (const ref of referenceMetadata.incoming) {
-    const snapshot = await db
-      .collection(ref.sourceCollection)
-      .where(ref.sourceField, '==', docId)
-      .limit(1)
-      .get();
-
-    if (!snapshot.empty) {
-      references.push({
-        collection: ref.sourceCollection,
-        field: ref.sourceField,
-        count: snapshot.size,
-      });
-    }
-  }
-
-  return references;
 }
